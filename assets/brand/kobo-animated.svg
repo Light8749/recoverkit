@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="kobo kobo-hero" width="512" height="512" viewBox="-24 -56 170 172" role="img" aria-label="Kobo, the RecoverKit pigeon" focusable="false">
+  <path class="kobo-trail" d="M60 74 C86 54 90 14 72 4 C54 -4 36 8 38 32 C40 52 50 66 60 74"/>
+  <ellipse class="kobo-shadow" cx="58" cy="108" rx="24" ry="4"/>
+  <g class="kobo-flight"><g class="kobo-squash">
+  <g class="kobo-tail">
+    <path class="k-wing" d="M34 80 L12 70 Q10 76 17 80 Q9 84 12 90 L34 88 Z"/>
+    <path class="k-wing-2" d="M30 82 L15 78 Q14 82 19 83 L30 85 Z"/>
+  </g>
+  <path class="k-body" d="M31 76 C30 56 45 44 62 45 C80 46 92 58 90 76 C88 93 73 101 57 100 C41 99 32 91 31 76 Z"/>
+  <path class="k-belly" d="M50 82 C50 70 60 63 72 66 C84 69 86 82 80 91 C73 99 58 99 52 92 C50 89 50 86 50 82 Z"/>
+  <path class="k-strap" d="M66 50 C58 62 50 74 44 88"/>
+  <g class="kobo-wing">
+    <path class="k-wing" d="M36 68 C44 56 62 56 70 67 C66 80 50 88 35 84 C32 78 32 73 36 68 Z"/>
+    <path class="k-wing-2" d="M40 76 C48 74 56 74 63 70 M38 81 C46 81 54 79 60 76"/>
+  </g>
+  <g class="kobo-bag">
+    <rect class="k-bag" x="34" y="84" width="22" height="15" rx="4"/>
+    <path class="k-bag-flap" d="M34 88 Q45 95 56 88 L56 87 Q56 84 52 84 L38 84 Q34 84 34 87 Z"/>
+    <circle class="k-bag-dot" cx="45" cy="91" r="1.6"/>
+  </g>
+  <g class="kobo-head">
+    <path class="k-sheen" d="M60 50 C62 42 70 37 79 39 C86 41 90 47 89 54 C82 50 70 49 60 50 Z"/>
+    <circle class="k-body" cx="77" cy="36" r="17"/>
+    <path class="k-tuft" d="M70 21 C67 14 74 11 76 17 C77 11 84 12 81 19"/>
+    <circle class="k-cheek" cx="86" cy="45" r="3.2"/>
+    <path class="k-beak" d="M92 35 C97 36 103 39 105 42 C101 44 96 45 92 45 C90 42 90 38 92 35 Z"/>
+    <g class="kobo-eye">
+      <circle class="k-eye" cx="81" cy="33" r="6.6"/>
+      <circle class="k-pupil" cx="83" cy="33.6" r="3.7"/>
+      <circle class="k-glint" cx="84.4" cy="32" r="1.3"/>
+    </g>
+    <path class="k-brow" d="M75 25 Q81 22 87 25"/>
+  </g>
+  <g class="k-feet">
+    <path d="M52 99 L50 106 M46 107 L50 106 L53 108"/>
+    <path d="M64 99 L66 106 M62 108 L66 106 L70 107"/>
+  </g></g></g>
+  <g class="kobo-coin"><circle cx="45" cy="78" r="8"/><text x="45" y="81.5" text-anchor="middle">₦</text></g>
+<style>/* ===================== KOBO START (mascot; copied into the standalone brand SVGs) =====================
+   Disney's 12 principles: anticipation (crouch), arcs (boomerang flight), slow in/out,
+   squash & stretch (landing), follow-through (tail lags the body), secondary action
+   (wing flaps, head bob, blink), timing (6 s loop with a long rest so it never nags),
+   exaggeration (landing overshoot), appeal (round shapes, asymmetric tuft, cheeky brow). */
+.kobo { overflow: visible; flex: none; }
+.kobo .k-body { fill: #4f7cff; }
+.kobo .k-belly { fill: #e3ebff; }
+.kobo .k-wing { fill: #2f5ae0; }
+.kobo .k-wing-2 { fill: none; stroke: #8fb0ff; stroke-width: 2; stroke-linecap: round; }
+.kobo .k-sheen { fill: #2fbf71; }
+.kobo .k-tuft, .kobo .k-brow { fill: none; stroke: #2f5ae0; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.kobo .k-brow { stroke: #1d2b5c; stroke-width: 2.4; }
+.kobo .k-cheek { fill: #ff7aa8; opacity: .45; }
+.kobo .k-beak { fill: #ff9f0a; }
+.kobo .k-eye { fill: #fff; }
+.kobo .k-pupil { fill: #14182b; }
+.kobo .k-glint { fill: #fff; }
+.kobo .k-strap { fill: none; stroke: #b7791f; stroke-width: 3.2; stroke-linecap: round; }
+.kobo .k-bag { fill: #e3a33b; }
+.kobo .k-bag-flap { fill: #c9862a; }
+.kobo .k-bag-dot { fill: #fff3d6; }
+.kobo .k-feet path { fill: none; stroke: #ff9f0a; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.kobo .kobo-trail { fill: none; stroke: #4f7cff; stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 2 7; opacity: 0; }
+.kobo .kobo-shadow { fill: #000; opacity: .12; }
+.kobo .kobo-coin circle { fill: #ffcc00; stroke: #e0a800; stroke-width: 1.5; }
+.kobo .kobo-coin text { fill: #7a5400; font: 700 10px -apple-system, "SF Pro Text", system-ui, sans-serif; }
+.kobo .kobo-coin { opacity: 0; }
+@media (prefers-color-scheme: dark) {
+  .kobo .k-belly { fill: #c9d7ff; }
+  .kobo .k-brow { stroke: #0b1230; }
+  .kobo .kobo-shadow { fill: #fff; opacity: .08; }
+  .kobo .kobo-trail { stroke: #7da2ff; }
+}
+
+/* Pivot points, in the SVG's own coordinates. */
+.kobo .kobo-flight, .kobo .kobo-squash, .kobo .kobo-wing, .kobo .kobo-tail, .kobo .kobo-head, .kobo .kobo-eye,
+.kobo .kobo-shadow, .kobo .kobo-coin { transform-box: view-box; }
+.kobo .kobo-flight { transform-origin: 60px 72px; }
+.kobo .kobo-squash { transform-origin: 58px 106px; }   /* the feet: squash happens against the ground */
+.kobo .kobo-wing { transform-origin: 62px 62px; }      /* the shoulder */
+.kobo .kobo-tail { transform-origin: 34px 82px; }      /* the base of the tail */
+.kobo .kobo-head { transform-origin: 66px 50px; }      /* the neck */
+.kobo .kobo-eye { transform-origin: 81px 33px; }
+.kobo .kobo-shadow { transform-origin: 58px 108px; }
+.kobo .kobo-coin { transform-origin: 45px 78px; }
+
+/* ---- small logo mark: alive but calm (blink + an occasional bob) ---- */
+.kobo-mark .kobo-eye { animation: kobo-blink 5.2s infinite; }
+.kobo-mark .kobo-head { animation: kobo-idle-bob 9s ease-in-out 1.2s infinite; }
+.kobo-mark .kobo-squash { animation: kobo-breathe 4s ease-in-out infinite; }
+
+/* ---- hero: the full "bring them back" loop, 6 s ---- */
+.kobo-hero .kobo-flight { animation: kobo-flight 6s infinite; }
+.kobo-hero .kobo-squash { animation: kobo-squash 6s infinite; }
+.kobo-hero .kobo-wing { animation: kobo-flap 6s infinite; }
+.kobo-hero .kobo-tail { animation: kobo-tail 6s infinite; }
+.kobo-hero .kobo-head { animation: kobo-head 6s infinite; }
+.kobo-hero .kobo-eye { animation: kobo-blink-hero 6s infinite; }
+.kobo-hero .kobo-shadow { animation: kobo-shadow 6s infinite; }
+.kobo-hero .kobo-trail { animation: kobo-trail 6s infinite; }
+.kobo-hero .kobo-coin { animation: kobo-coin 6s infinite; }
+
+@keyframes kobo-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes kobo-idle-bob {
+  0%, 80%, 100% { transform: none; }
+  84% { transform: translate(3px, 1px) rotate(4deg); }
+  88% { transform: none; }
+  91% { transform: translate(3px, 1px) rotate(4deg); }
+  95% { transform: none; }
+}
+@keyframes kobo-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, .985); } }
+
+/* Anticipation (crouch), then the arc out and back, then landing on the same spot. */
+@keyframes kobo-flight {
+  0%, 16% { transform: none; animation-timing-function: cubic-bezier(.3, 0, .2, 1); }
+  26% { transform: translate(22px, -34px) rotate(-14deg); animation-timing-function: linear; }
+  33% { transform: translate(14px, -66px) rotate(-4deg); animation-timing-function: linear; }
+  40% { transform: translate(-16px, -62px) rotate(10deg); animation-timing-function: linear; }
+  46% { transform: translate(-22px, -30px) rotate(14deg); animation-timing-function: cubic-bezier(.2, 0, .4, 1); }
+  53% { transform: none; }
+  100% { transform: none; }
+}
+/* Squash & stretch: crouch before take-off, stretch in the air, squash on landing, overshoot, settle. */
+@keyframes kobo-squash {
+  0%, 9% { transform: none; }
+  15% { transform: scale(1.12, .84); animation-timing-function: cubic-bezier(.2, 0, 0, 1); }
+  20% { transform: scale(.92, 1.1); }
+  48% { transform: scale(.96, 1.05); }
+  53% { transform: scale(1.2, .8); animation-timing-function: cubic-bezier(.3, 1.6, .5, 1); }
+  58% { transform: scale(.95, 1.06); }
+  63%, 100% { transform: none; }
+}
+/* Wings: flaps while airborne, a glide at the top of the arc, tucked at rest. */
+@keyframes kobo-flap {
+  0%, 13% { transform: none; }
+  16% { transform: rotate(-14deg); }
+  19% { transform: rotate(-48deg); } 22% { transform: rotate(18deg); }
+  25% { transform: rotate(-48deg); } 28% { transform: rotate(18deg); }
+  31%, 36% { transform: rotate(-20deg); }
+  39% { transform: rotate(-48deg); } 42% { transform: rotate(18deg); }
+  45% { transform: rotate(-48deg); } 48% { transform: rotate(-30deg); }
+  53% { transform: rotate(6deg); }
+  57%, 100% { transform: none; }
+}
+/* Follow-through: the tail trails the body's turns, then settles a beat after landing. */
+@keyframes kobo-tail {
+  0%, 15% { transform: none; }
+  20% { transform: rotate(10deg); }
+  30% { transform: rotate(-8deg); }
+  40% { transform: rotate(12deg); }
+  50% { transform: rotate(-6deg); }
+  56% { transform: rotate(14deg); }
+  61% { transform: rotate(-5deg); }
+  66%, 100% { transform: none; }
+}
+/* Secondary action: the classic pigeon head-bob after landing ("I'm back"). */
+@keyframes kobo-head {
+  0%, 13% { transform: none; }
+  16% { transform: rotate(-6deg); }
+  20%, 50% { transform: rotate(4deg); }
+  56%, 62% { transform: none; }
+  65% { transform: translate(5px, 1px) rotate(6deg); }
+  68% { transform: none; }
+  71% { transform: translate(5px, 1px) rotate(6deg); }
+  74%, 100% { transform: none; }
+}
+@keyframes kobo-blink-hero { 0%, 6%, 10%, 84%, 88%, 100% { transform: scaleY(1); } 8%, 86% { transform: scaleY(.1); } }
+@keyframes kobo-shadow {
+  0%, 15% { transform: none; opacity: .12; }
+  16% { transform: scale(1.15, 1); }
+  33% { transform: scale(.45, 1); opacity: .04; }
+  53% { transform: scale(1.2, 1); opacity: .14; }
+  60%, 100% { transform: none; opacity: .12; }
+}
+/* The return path draws behind the bird, then fades. */
+@keyframes kobo-trail {
+  0%, 18% { opacity: 0; }
+  24%, 52% { opacity: .55; }
+  64%, 100% { opacity: 0; }
+}
+/* The payoff: a recovered ₦ coin pops out of the satchel. */
+@keyframes kobo-coin {
+  0%, 58% { opacity: 0; transform: translate(0, 0) scale(.4); }
+  63% { opacity: 1; transform: translate(-4px, -22px) scale(1.15); animation-timing-function: cubic-bezier(.2, 0, .3, 1); }
+  67% { transform: translate(-5px, -26px) scale(1); }
+  80% { opacity: 1; transform: translate(-6px, -30px) scale(1); }
+  88%, 100% { opacity: 0; transform: translate(-7px, -40px) scale(.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kobo * { animation: none !important; }
+}
+/* ===================== KOBO END ===================== */</style></svg>

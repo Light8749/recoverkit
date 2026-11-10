@@ -1,0 +1,381 @@
+/* RecoverKit dashboard. Styled after Apple's Human Interface Guidelines:
+   system colors and font, inset grouped lists, sidebar on desktop and tab bar
+   on phones, light and dark mode that follow the OS. */
+
+:root {
+  color-scheme: light dark;
+  /* Apple system colors (light) */
+  --blue: #007aff; --green: #34c759; --red: #ff3b30; --orange: #ff9500; --gray: #8e8e93;
+  --label: #000; --label-2: rgba(60, 60, 67, .6); --label-3: rgba(60, 60, 67, .3);
+  --bg: #f2f2f7; --bg-2: #fff; --bg-3: #f2f2f7; --fill: rgba(120, 120, 128, .12); --fill-2: rgba(120, 120, 128, .2);
+  --separator: rgba(60, 60, 67, .29); --sidebar: rgba(246, 246, 248, .82); --bar: rgba(249, 249, 249, .86);
+  --tint-blue: rgba(0, 122, 255, .12); --tint-green: rgba(52, 199, 89, .15); --tint-red: rgba(255, 59, 48, .12); --tint-orange: rgba(255, 149, 0, .15);
+  --text-blue: #0062cc; --text-green: #248a3d; --text-red: #d70015; --text-orange: #c93400;
+  --radius: 12px; --row: 44px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Segoe UI", Roboto, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --blue: #0a84ff; --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --gray: #8e8e93;
+    --label: #fff; --label-2: rgba(235, 235, 245, .6); --label-3: rgba(235, 235, 245, .3);
+    --bg: #000; --bg-2: #1c1c1e; --bg-3: #2c2c2e; --fill: rgba(118, 118, 128, .24); --fill-2: rgba(118, 118, 128, .36);
+    --separator: rgba(84, 84, 88, .6); --sidebar: rgba(28, 28, 30, .82); --bar: rgba(22, 22, 23, .86);
+    --tint-blue: rgba(10, 132, 255, .2); --tint-green: rgba(48, 209, 88, .2); --tint-red: rgba(255, 69, 58, .2); --tint-orange: rgba(255, 159, 10, .2);
+    --text-blue: #409cff; --text-green: #30d158; --text-red: #ff6961; --text-orange: #ffb340;
+  }
+}
+@media (prefers-contrast: more) {
+  :root { --separator: var(--label-2); --label-2: var(--label); }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--label); font: 17px/1.4 var(--font); letter-spacing: -.01em; -webkit-font-smoothing: antialiased; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: var(--mono); font-size: 13px; }
+code { background: var(--fill); padding: 1px 5px; border-radius: 5px; word-break: break-all; }
+pre { margin: 0; width: 100%; white-space: pre-wrap; word-break: break-all; color: var(--label); }
+small { color: var(--label-2); }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- layout: content + sidebar (desktop) / tab bar (phone) ---------- */
+.content { max-width: 860px; margin: 0 auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0 16px; }
+h1 { font-size: 34px; line-height: 1.15; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+.subtitle { color: var(--label-2); margin: 6px 0 0; font-size: 15px; max-width: 60ch; }
+.head-actions { display: flex; gap: 8px; }
+
+.sidebar { display: none; }
+.tabbar {
+  position: fixed; inset: auto 0 0 0; z-index: 10; display: grid; grid-template-columns: repeat(5, 1fr);
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-top: .5px solid var(--separator);
+}
+.tabbar a { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 44px; justify-content: center; color: var(--gray); font-size: 10px; font-weight: 500; text-decoration: none; }
+.tabbar a[aria-current] { color: var(--blue); }
+.tabbar .badge { position: absolute; top: 0; left: calc(50% + 4px); }
+.mobile-only { display: block; }
+
+@media (min-width: 820px) {
+  body { font-size: 15px; }
+  .tabbar, .mobile-only { display: none; }
+  body.signed-in { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .sidebar {
+    display: flex; flex-direction: column; gap: 14px; position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 16px 10px;
+    background: var(--sidebar); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-right: .5px solid var(--separator);
+  }
+  .content { width: 100%; padding: 28px 40px 64px; }
+  h1 { font-size: 28px; }
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 8px; }
+.brand b { display: block; font-size: 15px; } .brand small { display: block; font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mark, .auth-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--blue); color: #fff; font-weight: 700; }
+.nav-group { display: flex; flex-direction: column; gap: 1px; }
+.nav-title { font-size: 11px; font-weight: 600; color: var(--label-2); margin: 6px 10px 4px; text-transform: none; }
+.nav-item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 5px 10px; border-radius: 8px; color: var(--label); font-size: 14px; text-decoration: none; }
+.nav-item .icon { width: 18px; height: 18px; color: var(--blue); }
+.nav-item:hover { background: var(--fill); text-decoration: none; }
+.nav-item[aria-current] { background: var(--fill-2); font-weight: 600; }
+.badge { margin-left: auto; min-width: 20px; padding: 1px 6px; border-radius: 10px; background: var(--red); color: #fff; font-size: 12px; font-weight: 600; text-align: center; line-height: 18px; }
+.sidebar-foot { margin-top: auto; padding: 8px 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 12px; color: var(--label-2); word-break: break-all; }
+
+/* ---------- inset grouped lists ---------- */
+.group { margin: 0 0 28px; }
+.group-head { font-size: 13px; font-weight: 400; color: var(--label-2); margin: 0 16px 6px; display: flex; align-items: center; gap: 8px; }
+.group-foot { font-size: 13px; color: var(--label-2); margin: 6px 16px 0; }
+.group-body { background: var(--bg-2); border-radius: var(--radius); overflow: hidden; }
+.row { position: relative; display: flex; align-items: center; gap: 12px; min-height: var(--row); padding: 10px 16px; color: var(--label); text-decoration: none; }
+.row + .row::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--separator); }
+.row-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.row-label small { display: block; font-size: 13px; margin-top: 2px; }
+.row-value { flex: none; display: flex; align-items: center; gap: 8px; color: var(--label-2); max-width: 55%; text-align: right; overflow-wrap: anywhere; }
+.row.link:hover { background: var(--fill); text-decoration: none; }
+.row.link:active { background: var(--fill-2); }
+.chev { width: 14px; height: 14px; color: var(--label-3); stroke-width: 2.5; }
+.row.dim { opacity: .55; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* fields inside rows */
+.row.field input, .row.field select { flex: 0 1 55%; min-width: 0; text-align: right; border: 0; background: transparent; color: var(--label); font: inherit; padding: 6px 0; }
+.row.field input::placeholder { color: var(--label-3); }
+.row.field select { text-align-last: right; appearance: none; -webkit-appearance: none; color: var(--label-2); cursor: pointer; }
+.row.field.stacked { flex-direction: column; align-items: stretch; }
+.row.field.stacked textarea { margin-top: 6px; }
+@media (max-width: 560px) {
+  .row.field { flex-direction: column; align-items: stretch; gap: 4px; }
+  .row.field input, .row.field select { text-align: left; text-align-last: left; flex: none; width: 100%; }
+}
+textarea, input.copy {
+  width: 100%; border: 0; border-radius: 10px; background: var(--fill); color: var(--label); font: inherit; padding: 10px 12px; resize: vertical;
+}
+input.copy { font-family: var(--mono); font-size: 13px; margin-top: 8px; }
+.row input.copy { margin: 0; }
+
+/* switch (a real checkbox) */
+.switch { position: relative; flex: none; width: 51px; height: 31px; }
+.switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+.switch .track { position: absolute; inset: 0; border-radius: 31px; background: var(--fill-2); transition: background .2s; }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, .15), 0 1px 1px rgba(0, 0, 0, .16); transition: transform .2s; }
+.switch input:checked + .track { background: var(--green); }
+.switch input:checked + .track::after { transform: translateX(20px); }
+.switch input:focus-visible + .track { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+/* radio rows: checkmark style */
+.row.radio { cursor: pointer; }
+.row.radio input { appearance: none; -webkit-appearance: none; width: 22px; height: 22px; margin: 0; flex: none; border-radius: 50%; border: 1.5px solid var(--label-3); }
+.row.radio input:checked { border: 0; background: var(--blue) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 14px no-repeat; }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 10px 18px; border: 0; border-radius: 12px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; transition: opacity .15s, transform .1s; }
+.btn:hover { text-decoration: none; opacity: .88; }
+.btn:active { transform: scale(.98); opacity: .75; }
+.btn.prominent { background: var(--blue); color: #fff; }
+.btn.tinted { background: var(--tint-blue); color: var(--text-blue); }
+.btn.plain { background: transparent; color: var(--blue); padding-left: 8px; padding-right: 8px; }
+.btn.destructive { color: var(--red); }
+.btn.destructive-fill { background: var(--tint-red); color: var(--text-red); }
+.btn.small { min-height: 32px; padding: 5px 12px; font-size: 14px; border-radius: 8px; }
+.btn.wide { width: 100%; }
+@media (min-width: 820px) { .btn { min-height: 34px; padding: 7px 16px; border-radius: 9px; } .btn.wide { width: auto; min-width: 220px; } }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 24px; }
+.sidebar-foot .btn.plain { padding: 0; min-height: 0; font-size: 12px; }
+/* spacing after a form's main button (not inside headers, rows or action bars) */
+.content > form > .btn, .content > form + .group, .auth form > .btn { margin-bottom: 28px; }
+.head-actions form, .row form, .actions form { margin: 0; }
+
+/* ---------- segmented control ---------- */
+.segmented { display: flex; padding: 2px; margin: 0 0 20px; border-radius: 9px; background: var(--fill); max-width: 460px; }
+.segmented a { flex: 1; text-align: center; padding: 6px 10px; border-radius: 7px; color: var(--label); font-size: 13px; font-weight: 500; text-decoration: none; min-height: 32px; display: grid; place-items: center; }
+.segmented a[aria-current] { background: var(--bg-2); font-weight: 600; box-shadow: 0 3px 8px rgba(0, 0, 0, .12), 0 3px 1px rgba(0, 0, 0, .04); }
+@media (prefers-color-scheme: dark) { .segmented a[aria-current] { background: #636366; } }
+
+/* ---------- tiles, bars, pills ---------- */
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 28px; }
+@media (min-width: 1100px) { .tiles { grid-template-columns: repeat(4, 1fr); } }
+.tile { background: var(--bg-2); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tile-label { font-size: 13px; color: var(--label-2); font-weight: 500; }
+.tile-value { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tile small { font-size: 12px; }
+.bar-row .row-label { flex: 0 0 42%; }
+.bar {
+  --bar-color: var(--blue);
+  -webkit-appearance: none; appearance: none; flex: 1 1 auto; min-width: 40px; height: 6px;
+  border: 0; border-radius: 3px; background: var(--fill); color: var(--bar-color); overflow: hidden;
+}
+.bar.green { --bar-color: var(--green); }
+.bar::-webkit-progress-bar { background: var(--fill); border-radius: 3px; }
+.bar::-webkit-progress-value { background: var(--bar-color); border-radius: 3px; }
+.bar::-moz-progress-bar { background: var(--bar-color); border-radius: 3px; }
+.bar-row .row-value { min-width: 36px; justify-content: flex-end; color: var(--label); font-weight: 600; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--fill); color: var(--label-2); white-space: nowrap; }
+.pill.green { background: var(--tint-green); color: var(--text-green); }
+.pill.orange { background: var(--tint-orange); color: var(--text-orange); }
+.pill.red { background: var(--tint-red); color: var(--text-red); }
+.score { font-weight: 700; color: var(--label); font-variant-numeric: tabular-nums; }
+
+/* ---------- cards (drafts) ---------- */
+.card { background: var(--bg-2); border-radius: var(--radius); padding: 14px 16px; margin: 0 0 12px; }
+.card .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.card .meta small { font-size: 12px; }
+.card .actions { margin: 10px 0 0; }
+
+/* ---------- feedback ---------- */
+.banner { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; padding: 12px 14px; border-radius: var(--radius); margin: 0 0 20px; font-size: 15px; }
+.banner > span { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.banner.ok { background: var(--tint-green); color: var(--text-green); }
+.banner.err { background: var(--tint-red); color: var(--text-red); }
+.banner.warn { background: var(--tint-orange); color: var(--label); }
+.banner.warn .icon { color: var(--orange); }
+.empty { text-align: center; padding: 40px 20px; background: var(--bg-2); border-radius: var(--radius); margin-bottom: 28px; }
+.empty .kobo { display: block; margin: 0 auto 8px; }
+.empty h2 { font-size: 20px; margin: 0 0 6px; }
+.empty p { color: var(--label-2); margin: 0 auto 16px; max-width: 42ch; }
+
+/* ---------- disclosure ---------- */
+details { margin: 0 0 24px; }
+details > summary { cursor: pointer; color: var(--blue); font-weight: 500; padding: 8px 16px; list-style: none; min-height: 44px; display: flex; align-items: center; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: "›"; display: inline-block; margin-right: 8px; transition: transform .2s; font-size: 20px; line-height: 1; }
+details[open] > summary::before { transform: rotate(90deg); }
+details.danger > summary { color: var(--red); }
+details.danger form { background: var(--bg-2); border-radius: var(--radius); padding: 14px 16px; }
+details.danger p { margin: 0 0 12px; color: var(--label-2); font-size: 14px; }
+
+/* ---------- sign in / standalone ---------- */
+.signed-out .content { max-width: 420px; padding-top: 4vh; }
+.signed-out .page-head { justify-content: center; text-align: center; }
+.signed-out .page-head h1 { font-size: 28px; }
+.signed-out .content { display: flex; flex-direction: column; }
+.signed-out .content > .auth { display: contents; }
+.signed-out .auth > * { order: 3; }
+.signed-out .auth > .auth-hero { order: 1; }
+.signed-out .page-head { order: 2; margin-top: 0; }
+.auth-hero { display: flex; justify-content: center; margin: -8px 0 4px; }
+.signed-out .subtitle { margin: 6px auto 0; }
+.auth .btn.wide { width: 100%; }
+.auth { text-align: center; }
+.auth-mark { width: 64px; height: 64px; border-radius: 16px; font-size: 30px; margin: 0 auto 12px; }
+.auth form { text-align: left; margin-top: 24px; }
+.auth .subtitle { margin: 0 auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* ===================== KOBO START (mascot; copied into the standalone brand SVGs) =====================
+   Disney's 12 principles: anticipation (crouch), arcs (boomerang flight), slow in/out,
+   squash & stretch (landing), follow-through (tail lags the body), secondary action
+   (wing flaps, head bob, blink), timing (6 s loop with a long rest so it never nags),
+   exaggeration (landing overshoot), appeal (round shapes, asymmetric tuft, cheeky brow). */
+.kobo { overflow: visible; flex: none; }
+.kobo .k-body { fill: #4f7cff; }
+.kobo .k-belly { fill: #e3ebff; }
+.kobo .k-wing { fill: #2f5ae0; }
+.kobo .k-wing-2 { fill: none; stroke: #8fb0ff; stroke-width: 2; stroke-linecap: round; }
+.kobo .k-sheen { fill: #2fbf71; }
+.kobo .k-tuft, .kobo .k-brow { fill: none; stroke: #2f5ae0; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.kobo .k-brow { stroke: #1d2b5c; stroke-width: 2.4; }
+.kobo .k-cheek { fill: #ff7aa8; opacity: .45; }
+.kobo .k-beak { fill: #ff9f0a; }
+.kobo .k-eye { fill: #fff; }
+.kobo .k-pupil { fill: #14182b; }
+.kobo .k-glint { fill: #fff; }
+.kobo .k-strap { fill: none; stroke: #b7791f; stroke-width: 3.2; stroke-linecap: round; }
+.kobo .k-bag { fill: #e3a33b; }
+.kobo .k-bag-flap { fill: #c9862a; }
+.kobo .k-bag-dot { fill: #fff3d6; }
+.kobo .k-feet path { fill: none; stroke: #ff9f0a; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.kobo .kobo-trail { fill: none; stroke: #4f7cff; stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 2 7; opacity: 0; }
+.kobo .kobo-shadow { fill: #000; opacity: .12; }
+.kobo .kobo-coin circle { fill: #ffcc00; stroke: #e0a800; stroke-width: 1.5; }
+.kobo .kobo-coin text { fill: #7a5400; font: 700 10px -apple-system, "SF Pro Text", system-ui, sans-serif; }
+.kobo .kobo-coin { opacity: 0; }
+@media (prefers-color-scheme: dark) {
+  .kobo .k-belly { fill: #c9d7ff; }
+  .kobo .k-brow { stroke: #0b1230; }
+  .kobo .kobo-shadow { fill: #fff; opacity: .08; }
+  .kobo .kobo-trail { stroke: #7da2ff; }
+}
+
+/* Pivot points, in the SVG's own coordinates. */
+.kobo .kobo-flight, .kobo .kobo-squash, .kobo .kobo-wing, .kobo .kobo-tail, .kobo .kobo-head, .kobo .kobo-eye,
+.kobo .kobo-shadow, .kobo .kobo-coin { transform-box: view-box; }
+.kobo .kobo-flight { transform-origin: 60px 72px; }
+.kobo .kobo-squash { transform-origin: 58px 106px; }   /* the feet: squash happens against the ground */
+.kobo .kobo-wing { transform-origin: 62px 62px; }      /* the shoulder */
+.kobo .kobo-tail { transform-origin: 34px 82px; }      /* the base of the tail */
+.kobo .kobo-head { transform-origin: 66px 50px; }      /* the neck */
+.kobo .kobo-eye { transform-origin: 81px 33px; }
+.kobo .kobo-shadow { transform-origin: 58px 108px; }
+.kobo .kobo-coin { transform-origin: 45px 78px; }
+
+/* ---- small logo mark: alive but calm (blink + an occasional bob) ---- */
+.kobo-mark .kobo-eye { animation: kobo-blink 5.2s infinite; }
+.kobo-mark .kobo-head { animation: kobo-idle-bob 9s ease-in-out 1.2s infinite; }
+.kobo-mark .kobo-squash { animation: kobo-breathe 4s ease-in-out infinite; }
+
+/* ---- hero: the full "bring them back" loop, 6 s ---- */
+.kobo-hero .kobo-flight { animation: kobo-flight 6s infinite; }
+.kobo-hero .kobo-squash { animation: kobo-squash 6s infinite; }
+.kobo-hero .kobo-wing { animation: kobo-flap 6s infinite; }
+.kobo-hero .kobo-tail { animation: kobo-tail 6s infinite; }
+.kobo-hero .kobo-head { animation: kobo-head 6s infinite; }
+.kobo-hero .kobo-eye { animation: kobo-blink-hero 6s infinite; }
+.kobo-hero .kobo-shadow { animation: kobo-shadow 6s infinite; }
+.kobo-hero .kobo-trail { animation: kobo-trail 6s infinite; }
+.kobo-hero .kobo-coin { animation: kobo-coin 6s infinite; }
+
+@keyframes kobo-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes kobo-idle-bob {
+  0%, 80%, 100% { transform: none; }
+  84% { transform: translate(3px, 1px) rotate(4deg); }
+  88% { transform: none; }
+  91% { transform: translate(3px, 1px) rotate(4deg); }
+  95% { transform: none; }
+}
+@keyframes kobo-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, .985); } }
+
+/* Anticipation (crouch), then the arc out and back, then landing on the same spot. */
+@keyframes kobo-flight {
+  0%, 16% { transform: none; animation-timing-function: cubic-bezier(.3, 0, .2, 1); }
+  26% { transform: translate(22px, -34px) rotate(-14deg); animation-timing-function: linear; }
+  33% { transform: translate(14px, -66px) rotate(-4deg); animation-timing-function: linear; }
+  40% { transform: translate(-16px, -62px) rotate(10deg); animation-timing-function: linear; }
+  46% { transform: translate(-22px, -30px) rotate(14deg); animation-timing-function: cubic-bezier(.2, 0, .4, 1); }
+  53% { transform: none; }
+  100% { transform: none; }
+}
+/* Squash & stretch: crouch before take-off, stretch in the air, squash on landing, overshoot, settle. */
+@keyframes kobo-squash {
+  0%, 9% { transform: none; }
+  15% { transform: scale(1.12, .84); animation-timing-function: cubic-bezier(.2, 0, 0, 1); }
+  20% { transform: scale(.92, 1.1); }
+  48% { transform: scale(.96, 1.05); }
+  53% { transform: scale(1.2, .8); animation-timing-function: cubic-bezier(.3, 1.6, .5, 1); }
+  58% { transform: scale(.95, 1.06); }
+  63%, 100% { transform: none; }
+}
+/* Wings: flaps while airborne, a glide at the top of the arc, tucked at rest. */
+@keyframes kobo-flap {
+  0%, 13% { transform: none; }
+  16% { transform: rotate(-14deg); }
+  19% { transform: rotate(-48deg); } 22% { transform: rotate(18deg); }
+  25% { transform: rotate(-48deg); } 28% { transform: rotate(18deg); }
+  31%, 36% { transform: rotate(-20deg); }
+  39% { transform: rotate(-48deg); } 42% { transform: rotate(18deg); }
+  45% { transform: rotate(-48deg); } 48% { transform: rotate(-30deg); }
+  53% { transform: rotate(6deg); }
+  57%, 100% { transform: none; }
+}
+/* Follow-through: the tail trails the body's turns, then settles a beat after landing. */
+@keyframes kobo-tail {
+  0%, 15% { transform: none; }
+  20% { transform: rotate(10deg); }
+  30% { transform: rotate(-8deg); }
+  40% { transform: rotate(12deg); }
+  50% { transform: rotate(-6deg); }
+  56% { transform: rotate(14deg); }
+  61% { transform: rotate(-5deg); }
+  66%, 100% { transform: none; }
+}
+/* Secondary action: the classic pigeon head-bob after landing ("I'm back"). */
+@keyframes kobo-head {
+  0%, 13% { transform: none; }
+  16% { transform: rotate(-6deg); }
+  20%, 50% { transform: rotate(4deg); }
+  56%, 62% { transform: none; }
+  65% { transform: translate(5px, 1px) rotate(6deg); }
+  68% { transform: none; }
+  71% { transform: translate(5px, 1px) rotate(6deg); }
+  74%, 100% { transform: none; }
+}
+@keyframes kobo-blink-hero { 0%, 6%, 10%, 84%, 88%, 100% { transform: scaleY(1); } 8%, 86% { transform: scaleY(.1); } }
+@keyframes kobo-shadow {
+  0%, 15% { transform: none; opacity: .12; }
+  16% { transform: scale(1.15, 1); }
+  33% { transform: scale(.45, 1); opacity: .04; }
+  53% { transform: scale(1.2, 1); opacity: .14; }
+  60%, 100% { transform: none; opacity: .12; }
+}
+/* The return path draws behind the bird, then fades. */
+@keyframes kobo-trail {
+  0%, 18% { opacity: 0; }
+  24%, 52% { opacity: .55; }
+  64%, 100% { opacity: 0; }
+}
+/* The payoff: a recovered ₦ coin pops out of the satchel. */
+@keyframes kobo-coin {
+  0%, 58% { opacity: 0; transform: translate(0, 0) scale(.4); }
+  63% { opacity: 1; transform: translate(-4px, -22px) scale(1.15); animation-timing-function: cubic-bezier(.2, 0, .3, 1); }
+  67% { transform: translate(-5px, -26px) scale(1); }
+  80% { opacity: 1; transform: translate(-6px, -30px) scale(1); }
+  88%, 100% { opacity: 0; transform: translate(-7px, -40px) scale(.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kobo * { animation: none !important; }
+}
+/* ===================== KOBO END ===================== */
