@@ -116,5 +116,5 @@ export function createIngest({ projects, people, engine, limiter, config }) {
     send(res, 200, { ok: true, erased: Boolean(personId) });
   }
 
-  return { collect, collectPreflight, serverEvents, serverErase };
+  return { collect, collectPreflight, serverEvents, serverErase, requireSecret };
 }

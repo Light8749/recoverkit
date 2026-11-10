@@ -11,7 +11,7 @@
     "brand": "node scripts/build-brand.js",
     "cli": "node src/cli.js",
     "test": "node --test --test-reporter=spec \"test/*.test.js\"",
-    "check": "node scripts/check-syntax.js && php -l sdk/php/RecoverKit.php",
+    "check": "node scripts/check-syntax.js && php -l sdk/php/RecoverKit.php && php -l sdk/php/recoverkit-connector.php",
     "audit": "npm audit --omit=dev"
   },
   "dependencies": {

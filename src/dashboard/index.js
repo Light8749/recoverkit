@@ -415,6 +415,7 @@ export function createDashboard({ db, config, projects, engine, outreach, people
     const p = ctx.project;
     const keys = db.all('SELECT id, label, created_at, revoked_at FROM api_keys WHERE project_id = ? ORDER BY created_at', p.id);
     const base = config.publicUrl;
+    const runs = db.all('SELECT * FROM connector_runs WHERE project_id = ? ORDER BY at DESC LIMIT 5', p.id);
     sendHtml(res, 200, page({
       title: 'Settings', active: 'settings', ctx,
       body: `${banner(url.searchParams)}${extra}
@@ -432,6 +433,10 @@ export function createDashboard({ db, config, projects, engine, outreach, people
         `<div class="row"><pre>&lt;script src="${esc(base)}/sdk/recoverkit.js"&gt;&lt;/script&gt;
 &lt;script&gt;RecoverKit.init({ key: '${esc(p.public_key)}', endpoint: '${esc(base)}' });&lt;/script&gt;</pre></div>`,
       ], 'Then call <code>RecoverKit.identify({ email, phone })</code> after login, and <code>trackPurchase</code> from your server when a sale really happens.')}
+      ${group('Existing data (read-only connector)', runs.length
+        ? runs.map((r) => row(`Synced ${ago(r.at)}<small>${esc(r.source)} ${esc(r.version)}</small>`, `${Number(r.people)} people · ${Number(r.events)} records · ${Number(r.new_events)} new`))
+        : [row('Not connected yet', '', { sub: 'Bring in your past customers without exporting anything' })],
+        `The connector runs on your own server with a read-only database login. Only hashes, dates and amounts leave it, and every query it runs is logged on your server. Set it up with <code>php recoverkit-connector.php setup</code>. To cut it off instantly, revoke the secret key it uses below.`)}
       ${group('Secret keys', [
         ...keys.map((k) => `<div class="row"><span class="row-label"><code>${esc(k.id)}</code><small>${esc(k.label)} · created ${ago(k.created_at)}</small></span><span class="row-value">${k.revoked_at ? pill('Revoked') : `<form method="post" action="/dashboard/keys/${esc(k.id)}/revoke">${csrfField(ctx)}<button class="btn plain destructive small">Revoke</button></form>`}</span></div>`),
       ], 'For your server only. Never put a secret key in a website or app.')}

@@ -13,6 +13,7 @@ import { createEngine } from './engine.js';
 import { createIngest } from './ingest.js';
 import { createWebhooks } from './webhooks.js';
 import { createDrafter } from './ai.js';
+import { createConnectorApi } from './connector.js';
 import { createOutreach } from './outreach.js';
 import { createDashboard, esc } from './dashboard/index.js';
 import { assets } from './dashboard/ui.js';
@@ -48,6 +49,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   const deps = { db, config, projects, people, engine, limiter, outreach, drafter, resolveAi };
   const ingest = createIngest(deps);
   const webhooks = createWebhooks(deps);
+  const connector = createConnectorApi({ ...deps, requireSecret: ingest.requireSecret, deps: { fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls } });
   const dash = createDashboard(deps);
 
   const css = readFileSync(join(here, 'dashboard/app.css'));
@@ -68,6 +70,8 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/v1/collect', ingest.collect)
     .add('POST', '/v1/server/events', ingest.serverEvents)
     .add('POST', '/v1/server/erase', ingest.serverErase)
+    .add('POST', '/v1/connector/suggest', connector.suggest)
+    .add('POST', '/v1/connector/sync', connector.sync)
     .add('POST', '/v1/webhooks/:gatewayId', webhooks.receive)
     .add('GET', '/', (_q, res) => redirect(res, '/dashboard'))
     .add('GET', '/login', dash.loginPage)

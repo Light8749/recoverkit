@@ -75,6 +75,19 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_person ON events(project_id, person_id, ts);
 CREATE INDEX IF NOT EXISTS events_anon ON events(project_id, anon_id);
 
+-- Last runs of each project's read-only connector (shown in the dashboard).
+CREATE TABLE IF NOT EXISTS connector_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  at INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  version TEXT NOT NULL,
+  people INTEGER NOT NULL,
+  events INTEGER NOT NULL,
+  new_events INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS connector_runs_project ON connector_runs(project_id, at);
+
 -- One row per real purchase. Webhook + server reports of the same payment merge into one row.
 CREATE TABLE IF NOT EXISTS purchases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,6 +175,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
 export function openDb(path) {
   const db = new DatabaseSync(path);
   db.exec(SCHEMA);
+  // Migration: events.source_key makes connector re-syncs idempotent.
+  if (!db.prepare('PRAGMA table_info(events)').all().some((c) => c.name === 'source_key')) db.exec('ALTER TABLE events ADD COLUMN source_key TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS events_source_key ON events(project_id, source_key) WHERE source_key IS NOT NULL');
   const cache = new Map();
   let depth = 0;
   const prep = (sql) => {

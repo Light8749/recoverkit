@@ -128,7 +128,12 @@ function parseModelJson(text) {
 }
 
 // Gemini's schema dialect has no additionalProperties.
-const geminiSchema = ({ additionalProperties, ...rest }) => ({ ...rest, properties: Object.fromEntries(Object.entries(rest.properties).map(([k, v]) => [k, { ...v }])) });
+function geminiSchema(schema) {
+  if (Array.isArray(schema)) return schema.map(geminiSchema);
+  if (!schema || typeof schema !== 'object') return schema;
+  const { additionalProperties, ...rest } = schema;
+  return Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, typeof v === 'object' ? geminiSchema(v) : v]));
+}
 
 // ---------------------------------------------------------------- providers
 
@@ -136,7 +141,7 @@ const geminiSchema = ({ additionalProperties, ...rest }) => ({ ...rest, properti
 const MODERN_CLAUDE = /^claude-(fable|mythos|opus|sonnet|haiku)-(5|4-[678])(\b|-)/;
 const FALLBACK_CLAUDE = /^claude-(fable-5-1|opus-5-5|opus-5|sonnet-5-5)$/;
 
-async function callAnthropic(settings, { system, user }, deps) {
+async function callAnthropic(settings, { system, user, schema = DRAFT_SCHEMA }, deps) {
   const client = deps.anthropicFactory(settings.apiKey);
   const modern = MODERN_CLAUDE.test(settings.model);
   const req = {
@@ -144,7 +149,7 @@ async function callAnthropic(settings, { system, user }, deps) {
     max_tokens: 4000,
     system: [{ type: 'text', text: system }],
     messages: [{ role: 'user', content: user }],
-    output_config: { ...(modern ? { effort: 'low' } : {}), format: { type: 'json_schema', schema: DRAFT_SCHEMA } },
+    output_config: { ...(modern ? { effort: 'low' } : {}), format: { type: 'json_schema', schema } },
     ...(modern ? { thinking: { type: 'adaptive' } } : {}),
   };
   const useFallbacks = FALLBACK_CLAUDE.test(settings.model);
@@ -156,15 +161,15 @@ async function callAnthropic(settings, { system, user }, deps) {
   return parseModelJson(response.content.filter((b) => b.type === 'text').map((b) => b.text).join(''));
 }
 
-async function callOpenAiStyle(settings, { system, user }, deps, { strictSchema }) {
+async function callOpenAiStyle(settings, { system, user, schema = DRAFT_SCHEMA, name = 'followup_draft', jsonHint = JSON_ONLY }, deps, { strictSchema }) {
   const base = settings.baseUrl || 'https://api.openai.com/v1';
   if (settings.baseUrl) await assertSafeUrl(base, deps.allowPrivateAiUrls, deps.resolver);
   const headers = settings.apiKey ? { Authorization: `Bearer ${settings.apiKey}` } : {};
   const json = await postJson(deps.fetch, `${base}/chat/completions`, headers, {
     model: settings.model,
-    messages: [{ role: 'system', content: strictSchema ? system : system + JSON_ONLY }, { role: 'user', content: user }],
+    messages: [{ role: 'system', content: strictSchema ? system : system + jsonHint }, { role: 'user', content: user }],
     response_format: strictSchema
-      ? { type: 'json_schema', json_schema: { name: 'followup_draft', strict: true, schema: DRAFT_SCHEMA } }
+      ? { type: 'json_schema', json_schema: { name, strict: true, schema } }
       : { type: 'json_object' },
   });
   const msg = json?.choices?.[0]?.message;
@@ -173,19 +178,20 @@ async function callOpenAiStyle(settings, { system, user }, deps, { strictSchema 
   return parseModelJson(msg?.content);
 }
 
-async function callGemini(settings, { system, user }, deps) {
+async function callGemini(settings, { system, user, schema = DRAFT_SCHEMA }, deps) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`;
   const json = await postJson(deps.fetch, url, { 'x-goog-api-key': settings.apiKey }, {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: user }] }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: geminiSchema(DRAFT_SCHEMA) },
+    generationConfig: { responseMimeType: 'application/json', responseSchema: geminiSchema(schema) },
   });
   const cand = json?.candidates?.[0];
   if (!cand || cand.finishReason === 'SAFETY') throw new Error('model declined');
   return parseModelJson((cand.content?.parts || []).map((p) => p.text || '').join(''));
 }
 
-export async function generateDraftJson(settings, prompt, deps) {
+/** Ask the chosen model for JSON matching prompt.schema (defaults to the follow-up draft schema). */
+export async function generateJson(settings, prompt, deps) {
   switch (settings.provider) {
     case 'anthropic': return callAnthropic(settings, prompt, deps);
     case 'openai': return callOpenAiStyle(settings, prompt, deps, { strictSchema: !settings.baseUrl });
@@ -194,6 +200,8 @@ export async function generateDraftJson(settings, prompt, deps) {
     default: throw new Error('no AI provider');
   }
 }
+
+export const generateDraftJson = generateJson;
 
 // ---------------------------------------------------------------- drafting
 

@@ -93,6 +93,35 @@ $rk->trackPurchase(['email' => $user->email, 'amount' => $amountKobo, 'ref' => $
 
 SDK calls time out after 3 seconds and never throw by default, so RecoverKit can't break a checkout.
 
+## Existing data: the read-only connector
+
+The SDK and webhooks only see people from the day they're installed. A business with years of customers has its best leads in its own database: people who signed up and never bought, funded a wallet and never bought, or bought once and disappeared. The connector brings those in **without exporting anything**.
+
+It's a small PHP program (`sdk/php/recoverkit-connector.php` plus `RecoverKit.php`) that runs **on the business's own server**:
+
+1. **Setup** (`php recoverkit-connector.php setup`). It reads only table and column **names** (plus row counts and short status labels like `successful`). It asks the business's chosen AI model, through RecoverKit, which table holds users and what counts as a real sale, or falls back to built-in guesses. It shows the answer in plain English, runs a dry run that counts people, buyers and never-bought on their server, and saves `recoverkit-connector.json` once the developer confirms.
+2. **Sync** (`php recoverkit-connector.php sync`, from cron every 15 minutes). The first run sends up to 2 years of history (`RK_HISTORY_DAYS`). After that it sends only what's new. Emails and phones are hashed on their server, and only hashes, event types, dates and amounts leave.
+3. **A sale is whatever the business says it is.** A row only counts if it matches every filter, for example `status = successful` **and** `service = data or airtime`. Wallet top-ups and payment attempts are sent as signals, never as sales.
+
+```bash
+# Laravel app: reads DB settings from the app's .env (add RK_PUBLIC_KEY, RK_SECRET_KEY, RK_ENDPOINT,
+# and ideally RK_DB_USER / RK_DB_PASS for a read-only login)
+php recoverkit-connector.php setup --laravel=/var/www/myapp
+php recoverkit-connector.php sync  --laravel=/var/www/myapp
+# Anything else:
+RK_DB_DSN="mysql:host=127.0.0.1;dbname=shop" RK_DB_USER=recoverkit RK_DB_PASS=... php recoverkit-connector.php setup
+```
+
+How the business stays safe:
+- **Read-only, three ways:** a read-only login (setup warns, and prints the `GRANT SELECT` to create one, if the login could write), a read-only database session, and code that only ever builds `SELECT` statements. Every table and column name must exist in the scanned schema, and every value is a bound parameter.
+- **No free-form queries:** nothing on the internet can tell it what to run. It only makes outbound HTTPS calls, and nothing calls in.
+- **A log of every query** in `recoverkit-connector.log` on their server.
+- **It stops itself** if a mapped table or column disappears, rather than send wrong data.
+- **One-click cut-off:** revoke the secret key it uses in Dashboard → Settings. The connector's last syncs show there too.
+- **Contact details stay home by default.** Setup asks whether RecoverKit may keep encrypted email, phone and first name so it can send follow-ups. If the answer is no, only hashes leave.
+
+Re-running sync never duplicates anything, because every row has a stable key.
+
 ## Identity
 
 Emails are trimmed and lowercased. Nigerian numbers are normalised (`0803…`, `803…`, `+234 0803…` → `234803…`). Each identifier is SHA-256 hashed **on the device or your server**, with the project key mixed in so hashes differ between businesses. The RecoverKit server then applies a secret HMAC pepper before storing, so stored keys can't be reversed by guessing phone numbers. The browser, webhooks and server all produce the same hash, so they join without RecoverKit ever seeing a raw email from the browser.
@@ -146,7 +175,7 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 ## Tests
 
 ```bash
-npm test         # 50 unit + end-to-end tests, real HTTP server and SQLite
+npm test         # 58 unit + end-to-end tests, real HTTP server and SQLite
 npm run check    # syntax check of every JS file, the browser bundle and the PHP SDK
 npm audit        # 0 known vulnerabilities at the time of writing
 ```

@@ -23,6 +23,9 @@
 | Chasing someone who already paid | Re-checked right before each send, plus a 7-day per-person cap and an atomic claim so nothing sends twice. | `e2e: send` |
 | Spam / unsubscribe | Signed unsubscribe token (GET shows a confirmation page, POST unsubscribes, so link scanners can't). | `e2e: send` |
 | Request floods | Body size limits on every endpoint, per-IP and per-project rate limits, bounded limiter memory, header and request timeouts. | `e2e: collect rejects...` |
+| Connector reading a business's database | Runs on their server and only calls out. Read-only login is checked (with a warning and a `GRANT SELECT` recipe), the session is forced read-only, and the code only builds `SELECT`s from names that exist in the scanned schema, with bound values. Every query is logged locally, and ID lists are logged only as a count. It stops if the schema changes. | `connector: setup`, `safety` |
+| AI seeing customer data during mapping | Only table and column names, row counts and short status labels are sent. Values that look like emails or long numbers are dropped on both sides. The AI's answer is checked against the real schema, so invented tables are removed. | `connector: setup` |
+| Replayed or forged history | `/v1/connector/sync` needs the secret key. Every person and event has a 64-hex key and is stored once. Timestamps must fall within the last 5 years. Contact details are only kept when the business opted in. | `connector: sync endpoint validates`, `sync again` |
 | Dependencies | One runtime dependency (`@anthropic-ai/sdk`, pinned). `npm audit`: 0 vulnerabilities. | `npm audit` |
 
 ## Known limits (accepted, not bugs)
@@ -36,3 +39,4 @@
 7. **NDPA:** you are a data processor for each business. Sign a data processing agreement, keep the erasure endpoint wired up, and only message people the business has a lawful basis to contact.
 8. **AI providers see the journey summary** (event types, timings, amounts and your voice notes), never contact details. Choose a provider whose data terms you accept. A self-hosted model through `RK_ALLOW_PRIVATE_AI_URLS` keeps everything on your servers.
 9. **DNS rebinding:** the SSRF check resolves the host before the request, so a hostile DNS server could still switch addresses between the check and the connection. Keep `RK_ALLOW_PRIVATE_AI_URLS` off, and add an egress firewall in production for full protection.
+10. **The connector's own login is only as safe as the server it runs on.** If the business uses its main app login instead of a read-only one, a compromised server could misuse that login, connector or not. Setup warns about this. The connector also keeps its config, state and log files next to itself, so store them outside the web root.

@@ -9,13 +9,16 @@ export const LAPSE_DAYS = 30;
 const DEDUPE_WINDOW = 15 * 60e3;
 
 export function createEngine(db, config) {
+  /** Returns true if the event was stored (false when its sourceKey was already seen). */
   function recordEvent(projectId, ev) {
-    db.run(
-      'INSERT INTO events (project_id, person_id, anon_id, layer, type, name, amount, currency, ts, received_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+    const r = db.run(
+      'INSERT OR IGNORE INTO events (project_id, person_id, anon_id, layer, type, name, amount, currency, ts, received_at, source_key) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
       projectId, ev.personId ?? null, ev.anonId ?? null, ev.layer, ev.type, ev.name ?? null,
-      ev.amount ?? null, ev.currency ?? null, ev.ts, Date.now(),
+      ev.amount ?? null, ev.currency ?? null, ev.ts, Date.now(), ev.sourceKey ?? null,
     );
+    if (!r.changes) return false;
     if (ev.personId) db.run('UPDATE persons SET last_seen = MAX(last_seen, ?) WHERE id = ?', ev.ts, ev.personId);
+    return true;
   }
 
   /** Attribute a purchase to the most recent message sent within the window before it. */
