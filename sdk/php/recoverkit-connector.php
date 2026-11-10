@@ -14,7 +14,8 @@
  * Cron (every 15 minutes):
  *   * /15 * * * *  php /path/to/recoverkit-connector.php sync >> /path/to/recoverkit-sync.out 2>&1
  *
- * Settings come from environment variables (or a Laravel .env with --laravel=/path/to/app):
+ * Settings come from environment variables, or from your app's own config with --app=/path/to/app
+ * (Laravel, WordPress/WooCommerce, Django, Rails, Prisma/Node, Spring Boot, ASP.NET, any .env with DATABASE_URL):
  *   RK_PUBLIC_KEY, RK_SECRET_KEY, RK_ENDPOINT
  *   RK_DB_DSN (e.g. mysql:host=127.0.0.1;dbname=shop), RK_DB_USER, RK_DB_PASS
  *   RK_TIMEZONE (default Africa/Lagos), RK_HISTORY_DAYS (default 730)
@@ -25,6 +26,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/RecoverKit.php';
+require_once __DIR__ . '/recoverkit-detect.php';
 
 final class RecoverKitConnector
 {
@@ -216,7 +218,7 @@ final class RecoverKitConnector
 
     private static function successValues(array $t, string $col): array
     {
-        return array_values(array_filter($t['values'][$col] ?? [], fn($v) => preg_match('/^(success|successful|succeeded|completed?|paid|delivered|approved|done|fulfilled|confirmed|active|won|settled)$/i', $v)));
+        return array_values(array_filter($t['values'][$col] ?? [], fn($v) => preg_match('/^((wc-)?(success|successful|succeeded|completed?|paid|delivered|approved|done|fulfilled|confirmed|active|won|settled)|wc-processing)$/i', $v)));
     }
 
     /** Built-in guesses from common naming habits, used when there is no AI suggestion. */
@@ -224,7 +226,7 @@ final class RecoverKitConnector
     {
         $people = null; $best = -1;
         foreach ($tables as $t) {
-            $score = preg_match('/^(users?|customers?|members?|accounts?|clients?|app_users|tbl_?users?|tbl_?members?)$/i', $t['name']) ? 3 : 0;
+            $score = preg_match('/^([A-Za-z0-9]+_)?(users?|customers?|members?|accounts?|clients?)$/i', $t['name']) ? 3 : 0; // also wp_users, tbl_members, app_users
             if (self::findCol($t, ['/^e-?mail(_address)?$/i', '/email/i'])) $score += 2;
             if (self::findCol($t, ['/^(phone|mobile|msisdn|phone_number|telephone)$/i', '/phone|mobile/i'])) $score += 1;
             if ($score > $best && $score >= 2) { $best = $score; $people = $t; }
@@ -233,17 +235,19 @@ final class RecoverKitConnector
         if (!$people) return $mapping;
         $mapping['people'] = [
             'table' => $people['name'],
-            'id' => self::findCol($people, ['/^id$/i', '/^(user|customer|member)_?id$/i']),
+            'id' => self::findCol($people, ['/^id$/i', '/^(user|customer|member)_?id$/i', '/^ID$/']),
             'email' => self::findCol($people, ['/^e-?mail(_address)?$/i', '/email/i']),
             'phone' => self::findCol($people, ['/^(phone|mobile|msisdn|phone_number|telephone)$/i', '/phone|mobile/i']),
             'firstName' => self::findCol($people, ['/^(first_?name|fname|firstname)$/i', '/^(name|full_?name|username)$/i']),
-            'createdAt' => self::findCol($people, ['/^(created_at|createdat|date_joined|registered_at|signup_date|reg_date|created|date_created)$/i', '/created|joined|regist/i']),
+            'createdAt' => self::findCol($people, ['/^(created_at|createdat|date_joined|registered_at|user_registered|signup_date|reg_date|created|date_created)$/i', '/created|joined|regist/i']),
         ];
         $userPat = ['/^(user|customer|member|account|client)_?id$/i', '/^uid$/i', '/^userid$/i'];
         $timePat = ['/^(paid_at|completed_at|created_at|createdat|date|transaction_date|timestamp|created)$/i', '/date|time|_at$/i'];
         $amountPat = ['/^(amount|total|amount_paid|price|value|total_amount|grand_total)$/i', '/amount|total|price/i'];
         foreach ($tables as $t) {
             if ($t['name'] === $people['name']) continue;
+            // Summary and helper tables repeat the same orders (e.g. WooCommerce wc_order_stats): never count them as sales.
+            if (preg_match('/(_stats|_lookup|_meta|meta|_logs?|_items?|_notes?|_history|_audit)$/i', $t['name'])) continue;
             $user = self::findCol($t, $userPat);
             $time = self::findCol($t, $timePat);
             if (!$user || !$time) continue;
@@ -609,23 +613,24 @@ if (PHP_SAPI === 'cli' && realpath($argv[0] ?? '') === __FILE__) {
     $env = getenv();
     $dir = getcwd();
     foreach ($args as $a) {
-        if (strpos($a, '--laravel=') === 0) {
-            $root = substr($a, 10);
-            $file = rtrim($root, '/') . '/.env';
-            if (!is_file($file)) { fwrite(STDERR, "No .env at $file\n"); exit(1); }
-            $l = [];
-            foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-                if (preg_match('/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/', $line, $mm)) $l[$mm[1]] = trim($mm[2], " \"'");
+        // --app=/path/to/your/app works for any framework; --laravel= is kept as an alias.
+        if (strpos($a, '--app=') === 0 || strpos($a, '--laravel=') === 0) {
+            $root = rtrim(substr($a, strpos($a, '=') + 1), '/');
+            $dotenv = RecoverKitDetect::readDotenv("$root/.env");
+            foreach (['RK_PUBLIC_KEY', 'RK_SECRET_KEY', 'RK_ENDPOINT', 'RK_DB_DSN', 'RK_DB_USER', 'RK_DB_PASS', 'RK_TIMEZONE', 'RK_HISTORY_DAYS'] as $k) {
+                if (!isset($env[$k]) && isset($dotenv[$k])) $env[$k] = $dotenv[$k];
             }
-            $driver = ($l['DB_CONNECTION'] ?? 'mysql') === 'pgsql' ? 'pgsql' : (($l['DB_CONNECTION'] ?? '') === 'sqlite' ? 'sqlite' : 'mysql');
-            $env['RK_DB_DSN'] = $env['RK_DB_DSN'] ?? ($driver === 'sqlite'
-                ? 'sqlite:' . ($l['DB_DATABASE'] ?? '')
-                : sprintf('%s:host=%s;port=%s;dbname=%s', $driver, $l['DB_HOST'] ?? '127.0.0.1', $l['DB_PORT'] ?? ($driver === 'pgsql' ? '5432' : '3306'), $l['DB_DATABASE'] ?? ''));
-            // Prefer a dedicated read-only login if the .env provides one.
-            $env['RK_DB_USER'] = $env['RK_DB_USER'] ?? ($l['RK_DB_USER'] ?? $l['DB_USERNAME'] ?? '');
-            $env['RK_DB_PASS'] = $env['RK_DB_PASS'] ?? ($l['RK_DB_PASS'] ?? $l['DB_PASSWORD'] ?? '');
-            foreach (['RK_PUBLIC_KEY', 'RK_SECRET_KEY', 'RK_ENDPOINT'] as $k) if (!isset($env[$k]) && isset($l[$k])) $env[$k] = $l[$k];
-            $dir = rtrim($root, '/');
+            if (!isset($env['RK_DB_DSN'])) {
+                $found = RecoverKitDetect::detect($root, $env);
+                if (isset($found['error'])) { fwrite(STDERR, 'Error: ' . $found['error'] . PHP_EOL); exit(1); }
+                $env['RK_DB_DSN'] = $found['dsn'];
+                // A dedicated read-only login (RK_DB_USER / RK_DB_PASS) always wins over the app's own login.
+                if (!isset($env['RK_DB_USER'])) $env['RK_DB_USER'] = (string)($found['user'] ?? '');
+                if (!isset($env['RK_DB_PASS'])) $env['RK_DB_PASS'] = (string)($found['pass'] ?? '');
+                fwrite(STDOUT, sprintf("Found your database in %s (%s): %s%s\n", $found['source'], $found['framework'], preg_replace('/password=[^;]*/i', 'password=***', $found['dsn']),
+                    isset($found['tablePrefix']) ? " · table prefix {$found['tablePrefix']}" : ''));
+            }
+            $dir = $root;
         }
         if (strpos($a, '--dir=') === 0) $dir = substr($a, 6);
     }
@@ -633,5 +638,6 @@ if (PHP_SAPI === 'cli' && realpath($argv[0] ?? '') === __FILE__) {
     if ($cmd === 'setup') $c->setup(!in_array('--no-ai', $args, true));
     elseif ($cmd === 'sync') $c->sync();
     elseif ($cmd === 'status') $c->status();
-    else fwrite(STDOUT, "Usage: php recoverkit-connector.php setup|sync|status [--laravel=/path/to/app] [--yes] [--no-ai]\n");
+    elseif ($cmd === 'detect') { $r = RecoverKitDetect::detect(rtrim($args[1] ?? $dir, '/'), $env); unset($r['pass']); fwrite(STDOUT, json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL); }
+    else fwrite(STDOUT, "Usage: php recoverkit-connector.php setup|sync|status [--app=/path/to/your/app] [--yes] [--no-ai]\n       php recoverkit-connector.php detect /path/to/your/app\n");
 }

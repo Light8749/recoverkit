@@ -97,20 +97,38 @@ SDK calls time out after 3 seconds and never throw by default, so RecoverKit can
 
 The SDK and webhooks only see people from the day they're installed. A business with years of customers has its best leads in its own database: people who signed up and never bought, funded a wallet and never bought, or bought once and disappeared. The connector brings those in **without exporting anything**.
 
-It's a small PHP program (`sdk/php/recoverkit-connector.php` plus `RecoverKit.php`) that runs **on the business's own server**:
+It's a small PHP program (`sdk/php/recoverkit-connector.php`, `recoverkit-detect.php` and `RecoverKit.php`) that runs **on the business's own server**:
 
 1. **Setup** (`php recoverkit-connector.php setup`). It reads only table and column **names** (plus row counts and short status labels like `successful`). It asks the business's chosen AI model, through RecoverKit, which table holds users and what counts as a real sale, or falls back to built-in guesses. It shows the answer in plain English, runs a dry run that counts people, buyers and never-bought on their server, and saves `recoverkit-connector.json` once the developer confirms.
 2. **Sync** (`php recoverkit-connector.php sync`, from cron every 15 minutes). The first run sends up to 2 years of history (`RK_HISTORY_DAYS`). After that it sends only what's new. Emails and phones are hashed on their server, and only hashes, event types, dates and amounts leave.
 3. **A sale is whatever the business says it is.** A row only counts if it matches every filter, for example `status = successful` **and** `service = data or airtime`. Wallet top-ups and payment attempts are sent as signals, never as sales.
 
+**Works with any language or framework.** The connector reads the *database*, not the code, so the app can be PHP, Node, Python, Ruby, Java, .NET or Go. Point `--app` at the project folder and it finds the database login in that framework's own config file:
+
+| Framework | Where it looks |
+|---|---|
+| Laravel | `.env` (`DB_*` or `DB_URL`) |
+| WordPress / WooCommerce | `wp-config.php` (also reads the table prefix) |
+| Django | `settings.py` (literal values, `os.environ`, `env()`, `dj_database_url`) |
+| Rails | `config/database.yml` (anchors, `<%= ENV[...] %>`, `url:`) |
+| Node with Prisma | `prisma/schema.prisma` → `env("DATABASE_URL")`, including SQLite files |
+| Spring Boot | `application.properties` / `application.yml` (`jdbc:` URLs, `${VAR:default}`) |
+| ASP.NET | `appsettings.json` connection strings |
+| Anything else (Express, NestJS, Flask, FastAPI, Go, Rust…) | `DATABASE_URL`, or `DB_HOST` / `DB_NAME` / `DB_USER`, or `PG*` variables in `.env` or the environment |
+
+Databases: **MySQL / MariaDB, PostgreSQL and SQLite.** MongoDB, SQL Server and Oracle are detected and reported as not supported yet.
+
 ```bash
-# Laravel app: reads DB settings from the app's .env (add RK_PUBLIC_KEY, RK_SECRET_KEY, RK_ENDPOINT,
-# and ideally RK_DB_USER / RK_DB_PASS for a read-only login)
-php recoverkit-connector.php setup --laravel=/var/www/myapp
-php recoverkit-connector.php sync  --laravel=/var/www/myapp
-# Anything else:
+php recoverkit-connector.php detect /var/www/myapp      # see what it found (password hidden)
+php recoverkit-connector.php setup --app=/var/www/myapp
+php recoverkit-connector.php sync  --app=/var/www/myapp  # cron, every 15 minutes
+# Or set everything yourself:
 RK_DB_DSN="mysql:host=127.0.0.1;dbname=shop" RK_DB_USER=recoverkit RK_DB_PASS=... php recoverkit-connector.php setup
 ```
+
+Put `RK_PUBLIC_KEY`, `RK_SECRET_KEY`, `RK_ENDPOINT` and, ideally, a read-only `RK_DB_USER` / `RK_DB_PASS` in the app's `.env` or the environment. A read-only login always wins over the app's own.
+
+**No PHP on the server?** Use the container in `sdk/php/Dockerfile`: `docker build -t recoverkit-connector sdk/php`. The usage notes, including cron, are at the top of that file. The app folder is mounted read-only.
 
 How the business stays safe:
 - **Read-only, three ways:** a read-only login (setup warns, and prints the `GRANT SELECT` to create one, if the login could write), a read-only database session, and code that only ever builds `SELECT` statements. Every table and column name must exist in the scanned schema, and every value is a bound parameter.
@@ -175,7 +193,8 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 ## Tests
 
 ```bash
-npm test         # 58 unit + end-to-end tests, real HTTP server and SQLite
+npm test         # 70 unit + end-to-end tests, real HTTP server and SQLite
+npm run test:mysql  # the connector against a real MySQL/MariaDB (set RK_TEST_MYSQL_DSN; see the test file)
 npm run check    # syntax check of every JS file, the browser bundle and the PHP SDK
 npm audit        # 0 known vulnerabilities at the time of writing
 ```
