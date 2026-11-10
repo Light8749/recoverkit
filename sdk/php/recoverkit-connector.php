@@ -32,6 +32,7 @@ final class RecoverKitConnector
 {
     public const VERSION = '1.0.0';
     private const NAME_RE = '/^[A-Za-z_][A-Za-z0-9_$]{0,63}$/';
+    private const META_KEY_RE = '/^[A-Za-z0-9_-]{1,64}$/';
     private const PAGE = 1000;
     private const BATCH = 400;
 
@@ -258,7 +259,9 @@ final class RecoverKitConnector
             if ($ok) $filters[] = ['column' => $status, 'values' => $ok];
             $unit = preg_match('/decimal|numeric|double|float|real|money/', (string)self::typeOf($t, $amount)) ? 'major' : 'minor';
             $base = ['name' => strtolower($t['name']), 'table' => $t['name'], 'key' => self::findCol($t, ['/^id$/i', '/^(reference|ref|transaction_id|txn_id)$/i']),
-                'userColumn' => $user, 'timeColumn' => $time, 'amountColumn' => $amount, 'amountUnit' => $unit, 'filters' => $filters];
+                'userColumn' => $user, 'timeColumn' => $time, 'amountColumn' => $amount, 'amountUnit' => $unit, 'filters' => $filters,
+                // Guest checkouts: the email/phone typed on the order itself.
+                'emailColumn' => self::findCol($t, ['/^(billing_|customer_|buyer_)?e-?mail$/i']), 'phoneColumn' => self::findCol($t, ['/^(billing_|customer_|buyer_)?(phone|mobile|msisdn)$/i'])];
             if (preg_match('/wallet|fund|deposit|top_?up|credit|load/i', $t['name'])) {
                 $mapping['signals'][] = $base + ['kind' => 'deposit'];
             } elseif (preg_match('/cart|checkout|pending|basket/i', $t['name'])) {
@@ -268,6 +271,47 @@ final class RecoverKitConnector
             }
         }
         return $mapping;
+    }
+
+    /**
+     * WooCommerce's tables are the same in every store, so no guessing is needed. Stores on the newer
+     * order storage (HPOS) use {prefix}wc_orders; older stores keep orders in {prefix}posts + {prefix}postmeta.
+     * During a migration both may hold the same orders, so only one is ever used.
+     * Returns [mapping, description] or null when this isn't WooCommerce.
+     */
+    public static function wooRecipe(array $tables): ?array
+    {
+        $by = [];
+        foreach ($tables as $t) $by[$t['name']] = $t;
+        $prefix = null;
+        foreach (array_keys($by) as $name) {
+            if (preg_match('/^(.*)postmeta$/', $name, $m) && isset($by[$m[1] . 'posts'], $by[$m[1] . 'users'])) { $prefix = $m[1]; break; }
+        }
+        if ($prefix === null) return null;
+        $people = ['table' => $prefix . 'users', 'id' => 'ID', 'email' => 'user_email', 'phone' => '', 'firstName' => 'display_name', 'createdAt' => 'user_registered'];
+        $paid = ['wc-completed', 'wc-processing'];
+        $unpaid = ['wc-pending', 'wc-failed', 'wc-on-hold', 'wc-cancelled'];
+        $hpos = $by[$prefix . 'wc_orders'] ?? null;
+        if ($hpos && ($hpos['rows'] ?? 0) > 0) {
+            $addr = isset($by[$prefix . 'wc_order_addresses']) ? ['table' => $prefix . 'wc_order_addresses', 'fk' => 'order_id', 'keyColumn' => 'address_type', 'valueColumn' => 'phone'] : null;
+            $base = ['table' => $prefix . 'wc_orders', 'key' => 'id', 'userColumn' => 'customer_id', 'emailColumn' => 'billing_email', 'phoneColumn' => $addr ? 'meta:billing' : '',
+                'timeColumn' => 'date_created_gmt', 'amountColumn' => 'total_amount', 'amountUnit' => 'major', 'meta' => $addr];
+            return [[
+                'people' => $people,
+                'conversions' => [$base + ['name' => 'woocommerce_order', 'refColumn' => 'transaction_id', 'filters' => [['column' => 'type', 'values' => ['shop_order']], ['column' => 'status', 'values' => $paid]]]],
+                'signals' => [$base + ['name' => 'woocommerce_unpaid_order', 'kind' => 'checkout', 'filters' => [['column' => 'type', 'values' => ['shop_order']], ['column' => 'status', 'values' => $unpaid]]]],
+                'notes' => 'Built-in WooCommerce mapping (newer order storage). Paid = completed or processing; pending/failed/on-hold orders are abandoned checkouts. Guest orders are matched by billing email and phone.',
+            ], 'WooCommerce (newer order storage, ' . $prefix . 'wc_orders)'];
+        }
+        $meta = ['table' => $prefix . 'postmeta', 'fk' => 'post_id', 'keyColumn' => 'meta_key', 'valueColumn' => 'meta_value'];
+        $base = ['table' => $prefix . 'posts', 'key' => 'ID', 'userColumn' => 'meta:_customer_user', 'emailColumn' => 'meta:_billing_email', 'phoneColumn' => 'meta:_billing_phone',
+            'timeColumn' => 'post_date_gmt', 'amountColumn' => 'meta:_order_total', 'amountUnit' => 'major', 'meta' => $meta];
+        return [[
+            'people' => $people,
+            'conversions' => [$base + ['name' => 'woocommerce_order', 'refColumn' => 'meta:_transaction_id', 'filters' => [['column' => 'post_type', 'values' => ['shop_order']], ['column' => 'post_status', 'values' => $paid]]]],
+            'signals' => [$base + ['name' => 'woocommerce_unpaid_order', 'kind' => 'checkout', 'filters' => [['column' => 'post_type', 'values' => ['shop_order']], ['column' => 'post_status', 'values' => $unpaid]]]],
+            'notes' => 'Built-in WooCommerce mapping (older order storage in ' . $prefix . 'posts and ' . $prefix . 'postmeta). Paid = completed or processing; pending/failed/on-hold orders are abandoned checkouts. Guest orders are matched by billing email and phone.',
+        ], 'WooCommerce (older order storage, ' . $prefix . 'posts + ' . $prefix . 'postmeta)'];
     }
 
     private static function typeOf(array $t, string $col): string
@@ -286,20 +330,37 @@ final class RecoverKitConnector
         return null;
     }
 
-    /** Drop anything that doesn't exist in the scanned schema. */
-    private static function checkMapping(array $m, array $tables): array
+    /**
+     * Drop anything that doesn't exist in the scanned schema. With $tables = null nothing is checked,
+     * which gives the "expected" shape to compare against (so old config files never look changed).
+     */
+    private static function checkMapping(array $m, ?array $tables): array
     {
         $cols = [];
-        foreach ($tables as $t) $cols[$t['name']] = array_column($t['columns'], 'name');
-        $has = fn($t, $c) => is_string($c) && $c !== '' && isset($cols[$t]) && in_array($c, $cols[$t], true) ? $c : '';
-        $pt = isset($cols[$m['people']['table'] ?? '']) ? $m['people']['table'] : '';
+        foreach ((array)$tables as $t) $cols[$t['name']] = array_column($t['columns'], 'name');
+        $tableOk = fn($t) => is_string($t) && $t !== '' && ($tables === null || isset($cols[$t]));
+        $has = fn($t, $c) => is_string($c) && $c !== '' && ($tables === null || (isset($cols[$t]) && in_array($c, $cols[$t], true))) ? $c : '';
+        $pt = $tableOk($m['people']['table'] ?? '') ? $m['people']['table'] : '';
         $people = ['table' => $pt];
         foreach (['id', 'email', 'phone', 'firstName', 'createdAt'] as $k) $people[$k] = $has($pt, $m['people'][$k] ?? '');
-        $src = function ($s, $isSignal) use ($cols, $has) {
+        $src = function ($s, $isSignal) use ($tableOk, $has) {
             $t = $s['table'] ?? '';
-            if (!isset($cols[$t])) return null;
+            if (!$tableOk($t)) return null;
             $o = ['name' => preg_match('/^[A-Za-z0-9_.:\/-]{1,64}$/', (string)($s['name'] ?? '')) ? $s['name'] : strtolower($t), 'table' => $t];
-            foreach (['key', 'userColumn', 'timeColumn', 'amountColumn'] as $k) $o[$k] = $has($t, $s[$k] ?? '');
+            $o['key'] = $has($t, $s['key'] ?? '');
+            $o['timeColumn'] = $has($t, $s['timeColumn'] ?? '');
+            // Optional key/value side table (e.g. wp_postmeta): fields written as "meta:<key>" are read from it.
+            $meta = null;
+            if (is_array($s['meta'] ?? null) && $tableOk($s['meta']['table'] ?? '') && $o['key']) {
+                $mt = $s['meta']['table'];
+                $meta = ['table' => $mt, 'fk' => $has($mt, $s['meta']['fk'] ?? ''), 'keyColumn' => $has($mt, $s['meta']['keyColumn'] ?? ''), 'valueColumn' => $has($mt, $s['meta']['valueColumn'] ?? '')];
+                if (!$meta['fk'] || !$meta['keyColumn'] || !$meta['valueColumn']) $meta = null;
+            }
+            $field = function ($c) use ($t, $has, $meta) {
+                if (is_string($c) && strpos($c, 'meta:') === 0) return $meta && preg_match(self::META_KEY_RE, substr($c, 5)) ? $c : '';
+                return $has($t, $c);
+            };
+            foreach (['userColumn', 'emailColumn', 'phoneColumn', 'amountColumn'] as $k) $o[$k] = $field($s[$k] ?? '');
             $o['amountUnit'] = ($s['amountUnit'] ?? '') === 'major' ? 'major' : 'minor';
             $o['filters'] = [];
             foreach (array_slice((array)($s['filters'] ?? []), 0, 3) as $f) {
@@ -307,9 +368,11 @@ final class RecoverKitConnector
                 $v = array_values(array_filter((array)($f['values'] ?? []), fn($x) => is_string($x) && strlen($x) <= 64));
                 if ($c && $v) $o['filters'][] = ['column' => $c, 'values' => array_slice($v, 0, 20)];
             }
-            if (!$o['userColumn'] || !$o['timeColumn']) return null;
+            $o['meta'] = $meta;
+            // A row needs a time and some way to know who it belongs to: an account, or the email/phone on the row (guest checkout).
+            if (!$o['timeColumn'] || (!$o['userColumn'] && !$o['emailColumn'] && !$o['phoneColumn'])) return null;
             if ($isSignal) $o['kind'] = in_array($s['kind'] ?? '', ['deposit', 'checkout', 'login', 'custom'], true) ? $s['kind'] : 'custom';
-            else { if (!$o['amountColumn']) return null; $o['refColumn'] = $has($t, $s['refColumn'] ?? ''); }
+            else { if (!$o['amountColumn']) return null; $o['refColumn'] = $field($s['refColumn'] ?? ''); }
             return $o;
         };
         return [
@@ -320,14 +383,43 @@ final class RecoverKitConnector
         ];
     }
 
-    private function whereFor(array $s, array &$params): string
+    /**
+     * FROM/JOIN/WHERE for one source, with the base table aliased "s". Fields written "meta:<key>" become
+     * LEFT JOINs on the key/value table; the key name is a bound parameter. Returns [sql, expressions].
+     */
+    private function sourceSql(array $s, array $fields, array &$params): array
     {
-        $parts = [];
+        $joins = ''; $expr = []; $n = 0;
+        foreach ($fields as $alias => $field) {
+            $col = $s[$field] ?? '';
+            if ($col === '') continue;
+            if (strpos($col, 'meta:') === 0) {
+                $m = $s['meta']; $n++;
+                $joins .= ' LEFT JOIN ' . $this->q($m['table']) . " m$n ON m$n." . $this->q($m['fk']) . ' = s.' . $this->q($s['key']) . " AND m$n." . $this->q($m['keyColumn']) . ' = ?';
+                $params[] = substr($col, 5);
+                $expr[$alias] = "m$n." . $this->q($m['valueColumn']);
+            } else {
+                $expr[$alias] = 's.' . $this->q($col);
+            }
+        }
+        $where = [];
         foreach ($s['filters'] as $f) {
-            $parts[] = $this->q($f['column']) . ' IN (' . implode(',', array_fill(0, count($f['values']), '?')) . ')';
+            $where[] = 's.' . $this->q($f['column']) . ' IN (' . implode(',', array_fill(0, count($f['values']), '?')) . ')';
             foreach ($f['values'] as $v) $params[] = $v;
         }
-        return $parts ? ' WHERE ' . implode(' AND ', $parts) : '';
+        return [' FROM ' . $this->q($s['table']) . ' s' . $joins . ($where ? ' WHERE ' . implode(' AND ', $where) : ''), $expr];
+    }
+
+    private function asText(string $expr): string
+    {
+        return 'NULLIF(NULLIF(CAST(' . $expr . ' AS ' . ($this->driver === 'mysql' ? 'CHAR' : 'TEXT') . "), ''), '0')";
+    }
+
+    private static function fieldLabel(array $s, string $field): string
+    {
+        $c = $s[$field] ?? '';
+        if ($c === '') return '';
+        return strpos($c, 'meta:') === 0 ? '`' . substr($c, 5) . "` (from `{$s['meta']['table']}`)" : "`$c`";
     }
 
     private function describe(array $m): void
@@ -335,7 +427,13 @@ final class RecoverKitConnector
         $p = $m['people'];
         $this->say("  People:      table `{$p['table']}` (id `{$p['id']}`, email `" . ($p['email'] ?: '—') . "`, phone `" . ($p['phone'] ?: '—') . "`, signed up `" . ($p['createdAt'] ?: '—') . '`)');
         $f = fn($s) => $s['filters'] ? ' where ' . implode(' and ', array_map(fn($x) => "{$x['column']} is " . implode('/', $x['values']), $s['filters'])) : ' (every row)';
-        foreach ($m['conversions'] as $s) $this->say("  A SALE is:   a row in `{$s['table']}`{$f($s)}, amount `{$s['amountColumn']}` in " . ($s['amountUnit'] === 'major' ? 'naira' : 'kobo'));
+        $who = function ($s) {
+            $parts = [];
+            if ($s['userColumn']) $parts[] = 'account ' . self::fieldLabel($s, 'userColumn');
+            if ($s['emailColumn'] || $s['phoneColumn']) $parts[] = 'guest ' . trim(self::fieldLabel($s, 'emailColumn') . ' ' . self::fieldLabel($s, 'phoneColumn'));
+            return ' · buyer: ' . implode(' or ', $parts);
+        };
+        foreach ($m['conversions'] as $s) $this->say("  A SALE is:   a row in `{$s['table']}`{$f($s)}, amount " . self::fieldLabel($s, 'amountColumn') . ' in ' . ($s['amountUnit'] === 'major' ? 'naira' : 'kobo') . $who($s));
         if (!$m['conversions']) $this->say('  A SALE is:   (nothing found — sales will only come from webhooks or trackPurchase)');
         foreach ($m['signals'] as $s) $this->say("  Not a sale:  `{$s['table']}`{$f($s)} → {$s['kind']}");
         if ($m['notes'] !== '') $this->say('  Note: ' . $m['notes']);
@@ -345,15 +443,22 @@ final class RecoverKitConnector
     private function dryRun(array $m): array
     {
         $p = $m['people'];
-        $out = ['people' => (int)$this->select('SELECT COUNT(*) AS n FROM ' . $this->q($p['table']))[0]['n'], 'buyers' => 0, 'sales' => 0, 'signals' => []];
+        $out = ['people' => (int)$this->select('SELECT COUNT(*) AS n FROM ' . $this->q($p['table']))[0]['n'], 'buyers' => 0, 'guests' => 0, 'sales' => 0, 'signals' => []];
+        $fields = ['u' => 'userColumn', 'e' => 'emailColumn', 'ph' => 'phoneColumn'];
         foreach ($m['conversions'] as $s) {
             $params = [];
-            $r = $this->select('SELECT COUNT(*) AS n, COUNT(DISTINCT ' . $this->q($s['userColumn']) . ') AS u FROM ' . $this->q($s['table']) . $this->whereFor($s, $params), $params)[0];
-            $out['sales'] += (int)$r['n']; $out['buyers'] = max($out['buyers'], (int)$r['u']);
+            [$from, $x] = $this->sourceSql($s, $fields, $params);
+            $user = isset($x['u']) ? $this->asText($x['u']) : 'NULL';
+            $contact = 'COALESCE(' . (isset($x['e']) ? $this->asText($x['e']) : 'NULL') . ', ' . (isset($x['ph']) ? $this->asText($x['ph']) : 'NULL') . ')';
+            $r = $this->select("SELECT COUNT(*) AS n, COUNT(DISTINCT $user) AS u, COUNT(DISTINCT CASE WHEN $user IS NULL THEN $contact END) AS g" . $from, $params)[0];
+            $out['sales'] += (int)$r['n']; $out['buyers'] = max($out['buyers'], (int)$r['u']); $out['guests'] += (int)$r['g'];
         }
         foreach ($m['signals'] as $s) {
             $params = [];
-            $out['signals'][$s['name']] = (int)$this->select('SELECT COUNT(DISTINCT ' . $this->q($s['userColumn']) . ') AS u FROM ' . $this->q($s['table']) . $this->whereFor($s, $params), $params)[0]['u'];
+            [$from, $x] = $this->sourceSql($s, $fields, $params);
+            $parts = array_map([$this, 'asText'], array_values($x));
+            $who = count($parts) === 1 ? $parts[0] : 'COALESCE(' . implode(', ', $parts) . ')';
+            $out['signals'][$s['name']] = (int)$this->select("SELECT COUNT(DISTINCT $who) AS u" . $from, $params)[0]['u'];
         }
         return $out;
     }
@@ -372,7 +477,12 @@ final class RecoverKitConnector
         $this->checkReadOnly($tables);
 
         $mapping = null;
-        if ($useAi && $this->ask('Ask your AI model to suggest the mapping? It will see table names, column names and status values like "successful", never customer data.')) {
+        $woo = self::wooRecipe($tables);
+        if ($woo) {
+            $this->say('Recognised ' . $woo[1] . '. Using the built-in WooCommerce mapping (no AI needed).');
+            $mapping = self::checkMapping($woo[0], $tables);
+        }
+        if (!$mapping && $useAi && $this->ask('Ask your AI model to suggest the mapping? It will see table names, column names and status values like "successful", never customer data.')) {
             $this->say('Asking...');
             $s = $this->suggestMapping($tables);
             if ($s) $mapping = self::checkMapping($s, $tables);
@@ -386,6 +496,7 @@ final class RecoverKitConnector
         $d = $this->dryRun($mapping);
         $this->say(''); $this->say('Dry run (counted on your server, nothing sent):');
         $this->say(sprintf('  %d people · %d have bought (%d sales) · %d never bought', $d['people'], $d['buyers'], $d['sales'], max(0, $d['people'] - $d['buyers'])));
+        if ($d['guests']) $this->say(sprintf('  + %d guest buyers who checked out without an account', $d['guests']));
         foreach ($d['signals'] as $n => $c) $this->say(sprintf('  %d people with %s', $c, $n));
         if (!$this->ask('Does that look right?')) $this->fail('not saved. Edit recoverkit-connector.json by hand, or run setup again.');
 
@@ -430,7 +541,7 @@ final class RecoverKitConnector
         $tables = $this->scanSchemaNamesOnly();
         $m = self::checkMapping($config['mapping'], $tables);
         // Safety: if the app's tables changed, stop rather than send something wrong.
-        if ($m !== $config['mapping']) $this->fail('your database tables changed since setup (a table or column in the mapping is gone). Run setup again. Nothing was sent.');
+        if ($m !== self::checkMapping($config['mapping'], null)) $this->fail('your database tables changed since setup (a table or column in the mapping is gone). Run setup again. Nothing was sent.');
 
         $stateFile = $this->path('.recoverkit-connector-state.json');
         $state = is_file($stateFile) ? (json_decode((string)file_get_contents($stateFile), true) ?: []) : [];
@@ -494,35 +605,43 @@ final class RecoverKitConnector
         };
 
         // 2. Sales and signals, oldest first, from the cursor.
+        $now = (int)(microtime(true) * 1000);
+        $oldest = $now - 5 * 365 * 86400000;
         $sources = array_merge(array_map(fn($s) => $s + ['_kind' => 'conversion'], $m['conversions']), array_map(fn($s) => $s + ['_kind' => 'signal'], $m['signals']));
+        $fields = ['k' => 'key', 'u' => 'userColumn', 'e' => 'emailColumn', 'ph' => 'phoneColumn', 't' => 'timeColumn', 'a' => 'amountColumn', 'r' => 'refColumn'];
         foreach ($sources as $s) {
             $ck = $s['_kind'] . ':' . $s['name'] . ':' . $s['table'];
-            $cols2 = array_values(array_unique(array_filter([$s['key'], $s['userColumn'], $s['timeColumn'], $s['amountColumn'], $s['refColumn'] ?? ''])));
             $params = [];
-            $where = $this->whereFor($s, $params);
-            $where .= ($where ? ' AND ' : ' WHERE ') . $this->q($s['timeColumn']) . ' >= ?';
+            [$from, $x] = $this->sourceSql($s, $fields, $params);
+            $from .= (strpos($from, ' WHERE ') !== false ? ' AND ' : ' WHERE ') . 's.' . $this->q($s['timeColumn']) . ' >= ?';
             $params[] = $this->cursor($s['table'], $s['timeColumn'], $since($ck));
-            $order = ' ORDER BY ' . $this->q($s['timeColumn']) . ($s['key'] ? ', ' . $this->q($s['key']) : '');
+            $select = 'SELECT ' . implode(', ', array_map(fn($a, $e) => "$e AS $a", array_keys($x), $x));
+            $order = ' ORDER BY s.' . $this->q($s['timeColumn']) . ($s['key'] ? ', s.' . $this->q($s['key']) : '');
             for ($offset = 0; ; $offset += self::PAGE) {
-                $rows = $this->select('SELECT ' . implode(', ', array_map([$this, 'q'], $cols2)) . ' FROM ' . $this->q($s['table']) . $where . $order . ' LIMIT ' . self::PAGE . ' OFFSET ' . $offset, $params);
-                $idsFor(array_map(fn($r) => (string)$r[$s['userColumn']], $rows));
+                $rows = $this->select($select . $from . $order . ' LIMIT ' . self::PAGE . ' OFFSET ' . $offset, $params);
+                $isAccount = fn($u) => $u !== null && $u !== '' && $u !== '0' && $u !== 0;
+                $idsFor(array_values(array_filter(array_map(fn($r) => isset($r['u']) ? (string)$r['u'] : null, $rows), $isAccount)));
                 foreach ($rows as $row) {
-                    $ids = $peopleCache[(string)$row[$s['userColumn']]] ?? [];
-                    $ts = $this->tsOf($row[$s['timeColumn']]);
-                    if (!$ids || !$ts) continue;
-                    $amount = $s['amountColumn'] ? self::minor($row[$s['amountColumn']], $s['amountUnit']) : null;
+                    $u = $row['u'] ?? null;
+                    $ids = $isAccount($u) ? ($peopleCache[(string)$u] ?? []) : [];
+                    // Guest checkout (or an account plus the email typed on the order): identify by the order's own email/phone.
+                    $own = $this->hasher()->hashes(['email' => $row['e'] ?? null, 'phone' => $row['ph'] ?? null]);
+                    $ids = array_slice(array_values(array_unique(array_merge($ids, $own))), 0, 4);
+                    $ts = $this->tsOf($row['t'] ?? null);
+                    if (!$ids || !$ts || $ts < $oldest) continue; // e.g. WordPress '0000-00-00' dates
+                    $amount = isset($x['a']) ? self::minor($row['a'] ?? null, $s['amountUnit']) : null;
                     if ($s['_kind'] === 'conversion' && $amount === null) continue;
-                    $rowKey = $s['key'] ? (string)$row[$s['key']] : $row[$s['userColumn']] . '|' . $ts . '|' . $amount;
-                    $ev = ['kind' => $s['_kind'], 'name' => $s['name'], 'ids' => $ids, 'ts' => min($ts, (int)(microtime(true) * 1000)), 'amount' => $amount, 'key' => hash('sha256', $ck . '|' . $rowKey)];
+                    $rowKey = $s['key'] ? (string)$row['k'] : ($u ?? ($row['e'] ?? '')) . '|' . $ts . '|' . $amount;
+                    $ev = ['kind' => $s['_kind'], 'name' => $s['name'], 'ids' => $ids, 'ts' => min($ts, $now), 'amount' => $amount, 'key' => hash('sha256', $ck . '|' . $rowKey)];
                     if ($s['_kind'] === 'signal') $ev['signal'] = $s['kind'];
-                    if (!empty($s['refColumn']) && isset($row[$s['refColumn']]) && preg_match('/^[\x21-\x7e]{1,128}$/', (string)$row[$s['refColumn']])) $ev['ref'] = (string)$row[$s['refColumn']];
+                    if (isset($row['r']) && preg_match('/^[\x21-\x7e]{1,128}$/', (string)$row['r'])) $ev['ref'] = (string)$row['r'];
                     $buffer['events'][] = $ev; $totals['events']++;
                     $newState[$ck] = max($newState[$ck] ?? 0, $ev['ts']);
                     $flush();
                 }
                 if (count($rows) < self::PAGE) break;
             }
-            $newState[$ck] = $newState[$ck] ?? (int)(microtime(true) * 1000);
+            $newState[$ck] = $newState[$ck] ?? $now;
         }
         $flush(true);
         $newState['lastSyncAt'] = (int)(microtime(true) * 1000);

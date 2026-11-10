@@ -198,3 +198,91 @@ test('mysql: a WooCommerce store via --app=wp-config.php, guessed without AI, no
   assert.deepEqual(amounts, [1500000, 800000]);
   await adminSql(`DROP DATABASE ${W};`);
 });
+
+function wooRun(site, args) {
+  return new Promise((resolve) => execFile('php', [CONNECTOR, ...args, `--app=${site}`], {
+    env: { PATH: process.env.PATH, RK_PUBLIC_KEY: project.publicKey, RK_SECRET_KEY: project.secretKey, RK_ENDPOINT: base, RK_TIMEZONE: 'Africa/Lagos' }, timeout: 60_000,
+  }, (err, o, e) => resolve({ code: err ? err.code ?? 1 : 0, out: o + e })));
+}
+function wooSite(name, dbName) {
+  const m = /host=([^;]+);port=(\d+)/.exec(DSN);
+  const site = join(dir, name); mkdirSync(site);
+  writeFileSync(join(site, 'wp-config.php'), `<?php\ndefine('DB_NAME', '${dbName}');\ndefine('DB_USER', '${RO_USER}');\ndefine('DB_PASSWORD', '${RO_PASS}');\ndefine('DB_HOST', '${m[1]}:${m[2]}');\n$table_prefix = 'wp_';\n`);
+  return site;
+}
+const WP_CORE = (W) => `
+  CREATE TABLE ${W}.wp_users (ID BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, user_login VARCHAR(60), user_pass VARCHAR(255), user_email VARCHAR(100), user_registered DATETIME, display_name VARCHAR(250));
+  CREATE TABLE ${W}.wp_usermeta (umeta_id BIGINT PRIMARY KEY, user_id BIGINT, meta_key VARCHAR(255), meta_value LONGTEXT);
+  CREATE TABLE ${W}.wp_posts (ID BIGINT UNSIGNED PRIMARY KEY, post_author BIGINT, post_date DATETIME, post_date_gmt DATETIME, post_status VARCHAR(20), post_type VARCHAR(20), post_title TEXT, post_parent BIGINT DEFAULT 0);
+  CREATE TABLE ${W}.wp_postmeta (meta_id BIGINT AUTO_INCREMENT PRIMARY KEY, post_id BIGINT UNSIGNED, meta_key VARCHAR(255), meta_value LONGTEXT, KEY post_id (post_id), KEY meta_key (meta_key(191)));`;
+const order = (W, id, type, status, when, meta) => `INSERT INTO ${W}.wp_posts VALUES (${id}, 1, '${when}', '${when}', '${status}', '${type}', 'Order', 0);
+  ${Object.entries(meta).map(([k, v]) => `INSERT INTO ${W}.wp_postmeta (post_id, meta_key, meta_value) VALUES (${id}, '${k}', '${v}');`).join('\n')}`;
+
+test('mysql: older WooCommerce (wp_posts + wp_postmeta): guests, refunds, drafts, unpaid orders, Paystack dedupe', { skip }, async () => {
+  const W = `${DB}_woo_old`;
+  const now = Date.now();
+  await adminSql(`CREATE DATABASE ${W}; GRANT SELECT ON ${W}.* TO '${RO_USER}'@'%'; ${WP_CORE(W)}
+    CREATE TABLE ${W}.wp_wc_orders (id BIGINT UNSIGNED PRIMARY KEY, status VARCHAR(20), type VARCHAR(20), total_amount DECIMAL(26,8), customer_id BIGINT, billing_email VARCHAR(320), date_created_gmt DATETIME, transaction_id VARCHAR(100));
+    INSERT INTO ${W}.wp_users VALUES (1,'ada','$P$h','ada@old.ng','${lagos(now - 120 * DAY)}','Ada'),(2,'bola','$P$h','bola@old.ng','${lagos(now - 40 * DAY)}','Bola'),(3,'chi','$P$h','chi@old.ng','${lagos(now - 2 * DAY)}','Chi');
+    ${order(W, 100, 'shop_order', 'wc-completed', lagos(now - 80 * DAY), { _customer_user: 1, _billing_email: 'ada@old.ng', _order_total: '15000.00', _transaction_id: 'PSK-REF-100' })}
+    ${order(W, 101, 'shop_order', 'wc-processing', lagos(now - 50 * DAY), { _customer_user: 0, _billing_email: 'guest@old.ng', _billing_phone: '08035550000', _order_total: '4500.00' })}
+    ${order(W, 102, 'shop_order', 'wc-pending', lagos(now - 3 * DAY), { _customer_user: 2, _billing_email: 'bola@old.ng', _order_total: '9000.00' })}
+    ${order(W, 103, 'shop_order_refund', 'wc-completed', lagos(now - 79 * DAY), { _order_total: '-15000.00', _refund_amount: '15000.00' })}
+    ${order(W, 104, 'shop_order', 'wc-checkout-draft', '0000-00-00 00:00:00', { _customer_user: 1, _order_total: '100.00' })}
+    INSERT INTO ${W}.wp_posts VALUES (105, 1, NOW(), NOW(), 'publish', 'page', 'About us', 0);`);
+  // Paystack already told RecoverKit about order 100 through its webhook.
+  const ada = app.people.resolve(project.id, identityHashes(project.publicKey, { email: 'ada@old.ng' }));
+  app.engine.recordPurchase(project.id, { personId: ada, ref: 'PSK-REF-100', amount: 1500000, currency: 'NGN', source: 'paystack', ts: now - 80 * DAY });
+
+  const site = wooSite('woo-old', W);
+  let r = await wooRun(site, ['setup', '--yes']);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Recognised WooCommerce \(older order storage, wp_posts \+ wp_postmeta\)/);
+  assert.match(r.out, /amount `_order_total` \(from `wp_postmeta`\) in naira · buyer: account `_customer_user` \(from `wp_postmeta`\) or guest `_billing_email` \(from `wp_postmeta`\)/);
+  assert.match(r.out, /3 people · 1 have bought \(2 sales\) · 2 never bought/);
+  assert.match(r.out, /\+ 1 guest buyers who checked out without an account/);
+
+  r = await wooRun(site, ['sync']);
+  assert.equal(r.code, 0, r.out);
+  const p = (who) => app.people.findByHashes(project.id, identityHashes(project.publicKey, who));
+  const adaRows = app.db.all('SELECT amount, sources FROM purchases WHERE person_id = ?', p({ email: 'ada@old.ng' }));
+  assert.deepEqual(adaRows.map((x) => ({ ...x })), [{ amount: 1500000, sources: 'connector,paystack' }], 'Paystack webhook + WooCommerce order = one sale; refund and draft ignored');
+  const guest = p({ email: 'guest@old.ng' });
+  assert.ok(guest, 'guest checkout became a person');
+  assert.equal(p({ phone: '08035550000' }), guest, 'matched by billing phone too');
+  assert.deepEqual(app.db.all('SELECT amount FROM purchases WHERE person_id = ?', guest).map((x) => x.amount), [450000]);
+  const stage = Object.fromEntries(app.engine.leads(project.id, { minConfidence: 0 }).map((l) => [l.personId, l.stage]));
+  assert.equal(stage[guest], 'bought_once', 'a guest who bought 50 days ago is a "gone quiet" lead');
+  assert.equal(stage[p({ email: 'bola@old.ng' })], 'checkout_abandoned', 'unpaid order = abandoned checkout');
+  assert.equal(stage[p({ email: 'chi@old.ng' })], 'registered');
+  await adminSql(`DROP DATABASE ${W};`);
+});
+
+test('mysql: WooCommerce mid-migration (orders in both layouts) is counted once, refunds excluded, guest phone from addresses', { skip }, async () => {
+  const W = `${DB}_woo_hpos`;
+  const now = Date.now();
+  await adminSql(`CREATE DATABASE ${W}; GRANT SELECT ON ${W}.* TO '${RO_USER}'@'%'; ${WP_CORE(W)}
+    CREATE TABLE ${W}.wp_wc_orders (id BIGINT UNSIGNED PRIMARY KEY, status VARCHAR(20), currency VARCHAR(10), type VARCHAR(20), total_amount DECIMAL(26,8), customer_id BIGINT UNSIGNED, billing_email VARCHAR(320), date_created_gmt DATETIME, transaction_id VARCHAR(100), parent_order_id BIGINT DEFAULT 0);
+    CREATE TABLE ${W}.wp_wc_order_addresses (id BIGINT AUTO_INCREMENT PRIMARY KEY, order_id BIGINT UNSIGNED, address_type VARCHAR(20), first_name TEXT, email VARCHAR(320), phone VARCHAR(100));
+    INSERT INTO ${W}.wp_users VALUES (1,'ada','$P$h','ada@hpos.ng','${lagos(now - 120 * DAY)}','Ada');
+    INSERT INTO ${W}.wp_wc_orders VALUES
+      (200,'wc-completed','NGN','shop_order',20000.00,1,'ada@hpos.ng','${lagos(now - 60 * DAY)}','PSK-200',0),
+      (201,'wc-completed','NGN','shop_order_refund',-20000.00,1,'ada@hpos.ng','${lagos(now - 59 * DAY)}','',200),
+      (202,'wc-processing','NGN','shop_order',7000.00,0,'guest@hpos.ng','${lagos(now - 45 * DAY)}','PSK-202',0);
+    INSERT INTO ${W}.wp_wc_order_addresses (order_id, address_type, first_name, email, phone) VALUES (202,'billing','Kemi','guest@hpos.ng','08036660000'),(202,'shipping','Kemi','', '');
+    ${order(W, 200, 'shop_order', 'wc-completed', lagos(now - 60 * DAY), { _customer_user: 1, _billing_email: 'ada@hpos.ng', _order_total: '20000.00' })}
+    ${order(W, 202, 'shop_order', 'wc-processing', lagos(now - 45 * DAY), { _customer_user: 0, _billing_email: 'guest@hpos.ng', _order_total: '7000.00' })}`);
+  const site = wooSite('woo-hpos', W);
+  let r = await wooRun(site, ['setup', '--yes']);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Recognised WooCommerce \(newer order storage, wp_wc_orders\)/);
+  assert.match(r.out, /where type is shop_order and status is wc-completed\/wc-processing/);
+  assert.match(r.out, /1 people · 1 have bought \(2 sales\) · 0 never bought/);
+  r = await wooRun(site, ['sync']);
+  assert.equal(r.code, 0, r.out);
+  const p = (who) => app.people.findByHashes(project.id, identityHashes(project.publicKey, who));
+  assert.deepEqual(app.db.all('SELECT amount FROM purchases WHERE person_id = ?', p({ email: 'ada@hpos.ng' })).map((x) => x.amount), [2000000], 'one sale, no refund, no copy from wp_posts');
+  assert.equal(p({ phone: '08036660000' }), p({ email: 'guest@hpos.ng' }), 'guest phone read from wc_order_addresses');
+  assert.deepEqual(app.db.all('SELECT amount FROM purchases WHERE person_id = ?', p({ email: 'guest@hpos.ng' })).map((x) => x.amount), [700000]);
+  await adminSql(`DROP DATABASE ${W};`);
+});
