@@ -153,17 +153,18 @@ Re-running sync never duplicates anything, because every row has a stable key.
 MongoDB apps (usually Node, often Mongoose) use `sdk/connector-node`. It has the same steps, the same mapping and the same safety rules:
 
 ```bash
-cd sdk/connector-node && npm install
-node recoverkit-connector.mjs detect /path/to/your/app     # finds the connection string (credentials hidden)
-node recoverkit-connector.mjs setup --app=/path/to/your/app
-node recoverkit-connector.mjs sync  --app=/path/to/your/app # cron, every 15 minutes
+npx recoverkit-connector detect /path/to/your/app       # finds the connection string (credentials hidden)
+npx recoverkit-connector setup --app=/path/to/your/app
+npx recoverkit-connector sync  --app=/path/to/your/app  # cron, every 15 minutes
+# From this repo before it's published: cd sdk/connector-node && npm install && node recoverkit-connector.mjs ...
 ```
 
 - **Finding the connection string:** `MONGODB_URI` and the usual names in `.env`, the variable the app's own code passes to `mongoose.connect(process.env.X)` or `new MongoClient(...)`, or a Prisma `mongodb` datasource.
 - **Learning the layout:** it samples a few documents per collection to learn field names. Only names and short status labels go to the AI.
 - **References and dates:** references can be `ObjectId`s, and amounts can be numbers or `Decimal128`. A collection with no `createdAt` field still has dates, because every `ObjectId` contains its creation time.
 - **Read-only:** it checks the login has only the `read` role, warns about servers with no login, and prints the `db.createUser` command for a read-only user. It only ever runs finds and read-only aggregations, and refuses `$out` and `$merge`. Field names can't start with `$`, so nothing in the mapping can become a query operator.
-- **Not yet:** orders stored *inside* user documents (embedded arrays) are reported in the setup notes but not read.
+- **Orders stored inside user documents** (for example `users.orders: [...]`) are read too, with the parent user as the buyer. Each item is keyed by its own `_id` (Mongoose adds one), so adding orders to the front of a list never duplicates old ones. Wallet top-ups stored the same way become deposit signals.
+- **Publishing to npm:** the package is self-contained and tested from a packed tarball. To make `npx recoverkit-connector` work for everyone, run `cd sdk/connector-node && npm login && npm publish` from your own npm account. The name `recoverkit-connector` was free when this was written.
 
 ## Identity
 
@@ -218,9 +219,10 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 ## Tests
 
 ```bash
-npm test         # 70 unit + end-to-end tests, real HTTP server and SQLite
+npm test         # 83 unit + end-to-end tests, including the connector against a real PostgreSQL 17 (embedded, no install needed)
 npm run test:mysql  # the connector against a real MySQL/MariaDB (set RK_TEST_MYSQL_DSN; see the test file)
 npm run test:mongo  # the MongoDB connector against a real mongod (downloaded automatically on first run)
+npm run check:ai    # ONE real call to your AI model (draft + database mapping). Needs ANTHROPIC_API_KEY or RK_AI_*; costs a few kobo
 npm run check    # syntax check of every JS file, the browser bundle and the PHP SDK
 npm audit        # 0 known vulnerabilities at the time of writing
 ```

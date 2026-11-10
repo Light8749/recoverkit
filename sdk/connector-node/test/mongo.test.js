@@ -172,7 +172,6 @@ test('built-in guesses without AI', async () => {
   assert.ok(r.ok, r.out);
   assert.match(r.out, /People:      collection `users`/);
   assert.match(r.out, /A SALE is:   a document in `orders` where status is paid, amount `total`.* · buyer: guest `customerEmail`/);
-  assert.match(r.out, /Note: .*"orders" is stored inside each user document/);
 });
 
 test('detect: the env var a Node app passes to mongoose.connect, and Prisma', async () => {
@@ -200,6 +199,7 @@ test('schema change stops the sync, and a revoked key is refused', async () => {
   r = await run('sync');
   assert.equal(r.ok, false);
   assert.match(r.out, /secret key was rejected/);
+  project.secretKey = app.projects.createSecretKey(project.id, 'connector');
 });
 
 test('setup refuses to run unattended without --yes', async () => {
@@ -208,4 +208,41 @@ test('setup refuses to run unattended without --yes', async () => {
   assert.equal(r.ok, false);
   assert.match(r.out, /run it in a terminal, or pass --yes/);
   assert.ok(!existsSync(join(d, 'recoverkit-connector.json')));
+});
+
+test('orders stored INSIDE each user document (embedded lists) are read, keyed by their own _id', async () => {
+  const db = admin.db('mall');
+  const now = Date.now();
+  const at = (d) => new Date(now - d * DAY);
+  const g1 = new ObjectId(); const g2 = new ObjectId();
+  await db.collection('users').insertMany([
+    { email: 'gbenga@mall.ng', phone: '08037770001', createdAt: at(200), orders: [
+      { _id: g1, item: 'gas refill', total: 9000, status: 'paid', createdAt: at(60) },
+      { _id: g2, item: 'gas refill', total: 9000, status: 'failed', createdAt: at(59) },
+      'not-a-document',
+    ], walletTopups: [{ amount: 5000, status: 'success', createdAt: at(61) }] },
+    { email: 'hauwa@mall.ng', createdAt: at(30), orders: [], walletTopups: [{ amount: 2000, status: 'success', createdAt: at(10) }] },
+    { email: 'ife@mall.ng', createdAt: at(3), orders: [{ item: 'cylinder', total: 25000, status: 'paid', createdAt: at(2) }] },
+  ]);
+  await admin.db('vtu').command({ grantRolesToUser: 'reader', roles: [{ role: 'read', db: 'mall' }] });
+  const uri = roUri.replace('/vtu?', '/mall?');
+  const d = join(dir, 'mall'); mkdirSync(d);
+  let r = await run('setup', { MONGODB_URI: uri }, { dir: d, ai: false });
+  assert.ok(r.ok, r.out);
+  assert.match(r.out, /A SALE is:   an item in `users\.orders` \(a list inside each document\) where status is paid, amount `total`.* · buyer: the user it belongs to/);
+  assert.match(r.out, /Not a sale:  `users\.walletTopups` where status is success → deposit/);
+  assert.match(r.out, /3 people · 2 have bought \(2 sales\) · 1 never bought/);
+  r = await run('sync', { MONGODB_URI: uri }, { dir: d });
+  assert.ok(r.ok, r.out);
+  const amounts = (email) => app.db.all('SELECT amount FROM purchases WHERE person_id = ?', personOf({ email })).map((x) => x.amount);
+  assert.deepEqual(amounts('gbenga@mall.ng'), [9000], 'paid order read; failed order and the non-document item ignored');
+  assert.deepEqual(amounts('ife@mall.ng'), [25000], 'an embedded order without its own _id still counts');
+  const stage = Object.fromEntries(app.engine.leads(project.id, { minConfidence: 0 }).map((l) => [l.personId, l.stage]));
+  assert.equal(stage[personOf({ email: 'hauwa@mall.ng' })], 'funded_not_bought', 'embedded wallet top-up, never bought');
+  assert.equal(stage[personOf({ email: 'gbenga@mall.ng' })], 'bought_once');
+  // Adding a new embedded order: picked up once, older ones not duplicated.
+  await db.collection('users').updateOne({ email: 'gbenga@mall.ng' }, { $push: { orders: { $each: [{ _id: new ObjectId(), item: 'gas refill', total: 9000, status: 'paid', createdAt: new Date(now - 60e3) }], $position: 0 } } });
+  r = await run('sync', { MONGODB_URI: uri }, { dir: d });
+  assert.ok(r.ok, r.out);
+  assert.deepEqual(amounts('gbenga@mall.ng').sort(), [9000, 9000], 'new order added at the front of the list: no duplicates of the old one');
 });

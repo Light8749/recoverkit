@@ -180,7 +180,7 @@ final class RecoverKitConnector
                 $tables[$r['name']] = ['name' => $r['name'], 'columns' => $cols];
             }
         } else {
-            $schemaCond = $this->driver === 'mysql' ? 'table_schema = DATABASE()' : "table_schema = 'public'";
+            $schemaCond = $this->driver === 'mysql' ? 'table_schema = DATABASE()' : 'table_schema = current_schema()';
             foreach ($this->select("SELECT table_name AS t, column_name AS c, data_type AS d FROM information_schema.columns WHERE $schemaCond ORDER BY table_name, ordinal_position") as $r) {
                 $t = $r['t'] ?? $r['T'] ?? ''; $c = $r['c'] ?? $r['C'] ?? ''; $d = $r['d'] ?? $r['D'] ?? '';
                 if (!preg_match(self::NAME_RE, $t) || !preg_match(self::NAME_RE, $c)) continue;
@@ -194,7 +194,7 @@ final class RecoverKitConnector
             $t['values'] = [];
             foreach ($t['columns'] as $c) {
                 if (!preg_match('/(status|state|type|kind|category|service|product|network|channel|plan)$/i', $c['name'])) continue;
-                if (!preg_match('/char|text|enum|string|^$/', $c['type'])) continue;
+                if (!preg_match('/char|text|enum|string|user-defined|^$/', $c['type'])) continue; // user-defined = Postgres ENUM
                 $vals = $this->select('SELECT DISTINCT ' . $this->q($c['name']) . ' AS v FROM ' . $this->q($name) . ' LIMIT 26');
                 if (count($vals) > 25) continue; // free text, not a status
                 $clean = [];
@@ -658,7 +658,7 @@ final class RecoverKitConnector
             }
             return $tables;
         }
-        $schemaCond = $this->driver === 'mysql' ? 'table_schema = DATABASE()' : "table_schema = 'public'";
+        $schemaCond = $this->driver === 'mysql' ? 'table_schema = DATABASE()' : 'table_schema = current_schema()';
         $by = [];
         foreach ($this->select("SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE $schemaCond") as $r) {
             $t = $r['t'] ?? $r['T'] ?? ''; $c = $r['c'] ?? $r['C'] ?? '';

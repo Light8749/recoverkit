@@ -3,9 +3,34 @@
   "version": "1.0.0",
   "description": "RecoverKit read-only connector for MongoDB apps (Node.js). Reads your database where it lives and sends only hashes, dates and amounts.",
   "type": "module",
-  "bin": { "recoverkit-connector": "recoverkit-connector.mjs" },
-  "engines": { "node": ">=20" },
-  "scripts": { "test": "node --test --test-reporter=spec \"test/*.test.js\"" },
-  "dependencies": { "mongodb": "7.7.0" },
-  "devDependencies": { "mongodb-memory-server": "11.3.0" }
+  "bin": {
+    "recoverkit-connector": "recoverkit-connector.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "copy-core": "node scripts/copy-core.mjs",
+    "pretest": "node scripts/copy-core.mjs",
+    "test": "node --test --test-reporter=spec \"test/*.test.js\"",
+    "prepack": "node scripts/copy-core.mjs"
+  },
+  "dependencies": {
+    "mongodb": "7.7.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "11.3.0"
+  },
+  "files": [
+    "recoverkit-connector.mjs",
+    "lib/",
+    "README.md"
+  ],
+  "license": "UNLICENSED",
+  "keywords": [
+    "recoverkit",
+    "mongodb",
+    "sales-recovery",
+    "connector"
+  ]
 }
