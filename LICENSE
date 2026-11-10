@@ -1,0 +1,31 @@
+RecoverKit
+Copyright (c) 2026 Light8749. All rights reserved.
+
+This software and its source code ("the Software") are the property of the copyright holder.
+The source code is made publicly visible for transparency and evaluation only. This is not an
+open-source license.
+
+You MAY, without asking:
+  - view and read the source code;
+  - clone it and run it on your own computer to evaluate it;
+  - open issues, and suggest changes through pull requests (see CONTRIBUTING.md).
+
+You MAY NOT, without prior written permission from the copyright holder:
+  - use the Software, or any part of it, in production or for any commercial purpose;
+  - copy, modify, merge, publish, distribute, sublicense or sell copies of the Software,
+    or any substantial part of it;
+  - offer the Software, or anything derived from it, as a hosted or managed service;
+  - use the Software to build a competing product.
+
+To ask for permission or a commercial license, open an issue in this repository or contact
+the copyright holder.
+
+Third-party components keep their own licenses. In particular, the files under
+.claude/skills/ come from third parties under the MIT License; their license texts are in
+.claude/skills/HIG-LICENSE.txt and .claude/skills/ANIMATION-PRINCIPLES-LICENSE.txt.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

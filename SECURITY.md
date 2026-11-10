@@ -1,5 +1,12 @@
 # Security and privacy
 
+## Reporting a vulnerability
+
+Please **don't** report security problems in public issues. Use GitHub's private reporting instead: go to the **Security** tab of this repository and choose **Report a vulnerability**. Include what you found, how to reproduce it, and what an attacker could do with it.
+
+You'll get an acknowledgement within a few days. Please give us a reasonable time to fix the problem before you disclose it publicly. Never test against systems or data you don't own.
+
+
 ## What is protected, and how
 
 | Threat | Protection | Tested in |

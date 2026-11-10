@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, curl, mbstring
+          coverage: none
+      - name: Install
+        run: |
+          npm ci
+          # embedded-postgres restores its library symlinks in an install script; run it explicitly
+          (cd node_modules/@embedded-postgres/linux-x64 && node scripts/hydrate-symlinks.js) || true
+      - name: Syntax check
+        run: npm run check
+      - name: Tests (SQLite, PostgreSQL)
+        run: npm test
+      - name: Connector on MariaDB
+        run: npm run test:mysql
+        env:
+          RK_TEST_MYSQL_DSN: "mysql:host=127.0.0.1;port=3306"
+          RK_TEST_MYSQL_USER: root
+          RK_TEST_MYSQL_PASS: root
+      - name: MongoDB connector
+        run: npm run test:mongo
+      - name: Audit runtime dependencies
+        run: |
+          npm audit --omit=dev
+          (cd sdk/connector-node && npm audit --omit=dev)
