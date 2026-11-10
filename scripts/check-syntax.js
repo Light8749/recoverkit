@@ -10,7 +10,7 @@ const walk = (d) => {
   for (const f of readdirSync(d)) {
     if (f === 'node_modules' || f.startsWith('.')) continue;
     const p = join(d, f);
-    if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.js')) files.push(p);
+    if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.js') || p.endsWith('.mjs')) files.push(p);
   }
 };
 for (const d of ['src', 'sdk', 'scripts', 'test']) walk(d);

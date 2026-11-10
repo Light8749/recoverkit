@@ -116,7 +116,15 @@ It's a small PHP program (`sdk/php/recoverkit-connector.php`, `recoverkit-detect
 | ASP.NET | `appsettings.json` connection strings |
 | Anything else (Express, NestJS, Flask, FastAPI, Go, Rust…) | `DATABASE_URL`, or `DB_HOST` / `DB_NAME` / `DB_USER`, or `PG*` variables in `.env` or the environment |
 
-Databases: **MySQL / MariaDB, PostgreSQL and SQLite.** MongoDB, SQL Server and Oracle are detected and reported as not supported yet.
+Databases: **MySQL / MariaDB, PostgreSQL and SQLite** (this PHP connector) and **MongoDB** (the Node connector below). SQL Server and Oracle are detected and reported as not supported yet.
+
+**WooCommerce works out of the box.** WooCommerce's tables are the same in every store, so the connector recognises them and uses a built-in mapping, with no AI and no guessing:
+- **Both order layouts:** the older one (`wp_posts` + `wp_postmeta`) and the newer one (`wc_orders`). During a migration, when both hold the same orders, only one is read.
+- **What counts:** paid means `completed` or `processing`. Unpaid orders (`pending`, `failed`, `on-hold`, `cancelled`) become abandoned-checkout signals. Refunds and checkout drafts are ignored.
+- **Guest checkouts** are matched by their billing email and phone, so a guest who bought once and never came back is a lead.
+- **No double counting with Paystack:** the order's transaction ID becomes the payment reference, so it merges with a Paystack webhook for the same payment.
+
+**Guest checkouts and key/value tables, for any app.** A sale or signal can name `emailColumn` / `phoneColumn` on the order row itself (guest buyers). A field can also be written as `meta:<key>` to read it from a key/value side table (like `wp_postmeta`). The connector turns that into a safe read-only join.
 
 ```bash
 php recoverkit-connector.php detect /var/www/myapp      # see what it found (password hidden)
@@ -139,6 +147,23 @@ How the business stays safe:
 - **Contact details stay home by default.** Setup asks whether RecoverKit may keep encrypted email, phone and first name so it can send follow-ups. If the answer is no, only hashes leave.
 
 Re-running sync never duplicates anything, because every row has a stable key.
+
+### MongoDB apps: the Node connector
+
+MongoDB apps (usually Node, often Mongoose) use `sdk/connector-node`. It has the same steps, the same mapping and the same safety rules:
+
+```bash
+cd sdk/connector-node && npm install
+node recoverkit-connector.mjs detect /path/to/your/app     # finds the connection string (credentials hidden)
+node recoverkit-connector.mjs setup --app=/path/to/your/app
+node recoverkit-connector.mjs sync  --app=/path/to/your/app # cron, every 15 minutes
+```
+
+- **Finding the connection string:** `MONGODB_URI` and the usual names in `.env`, the variable the app's own code passes to `mongoose.connect(process.env.X)` or `new MongoClient(...)`, or a Prisma `mongodb` datasource.
+- **Learning the layout:** it samples a few documents per collection to learn field names. Only names and short status labels go to the AI.
+- **References and dates:** references can be `ObjectId`s, and amounts can be numbers or `Decimal128`. A collection with no `createdAt` field still has dates, because every `ObjectId` contains its creation time.
+- **Read-only:** it checks the login has only the `read` role, warns about servers with no login, and prints the `db.createUser` command for a read-only user. It only ever runs finds and read-only aggregations, and refuses `$out` and `$merge`. Field names can't start with `$`, so nothing in the mapping can become a query operator.
+- **Not yet:** orders stored *inside* user documents (embedded arrays) are reported in the setup notes but not read.
 
 ## Identity
 
@@ -195,6 +220,7 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 ```bash
 npm test         # 70 unit + end-to-end tests, real HTTP server and SQLite
 npm run test:mysql  # the connector against a real MySQL/MariaDB (set RK_TEST_MYSQL_DSN; see the test file)
+npm run test:mongo  # the MongoDB connector against a real mongod (downloaded automatically on first run)
 npm run check    # syntax check of every JS file, the browser bundle and the PHP SDK
 npm audit        # 0 known vulnerabilities at the time of writing
 ```
