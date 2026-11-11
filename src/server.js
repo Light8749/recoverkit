@@ -167,19 +167,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
 }
 
 // Run directly: `node src/server.js`
+// Run directly: `node src/server.js` (cPanel uses app.cjs, which loads src/start.js the same way).
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  loadDotEnv();
-  const config = readConfig();
-  if (!existsSync(config.dbPath)) console.log(`Creating database at ${config.dbPath}`);
-  if (!config.publicUrl.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(config.publicUrl)) {
-    console.warn('WARNING: RK_PUBLIC_URL is not https. Run behind TLS in production (cookies are only marked Secure on https).');
-  }
-  const app = await createApp({ config });
-  app.server.listen(config.port, config.host, () => {
-    console.log(`RecoverKit listening on http://${config.host}:${config.port}  (public URL ${config.publicUrl})`);
-    console.log(config.ai.provider === 'none' ? 'Default AI: none (templates). Businesses can choose a model in the dashboard.' : `Default AI: ${config.ai.provider} / ${config.ai.model}`);
-  });
-  const stop = () => app.close().then(() => process.exit(0));
-  process.on('SIGINT', stop);
-  process.on('SIGTERM', stop);
+  await import('./start.js');
 }

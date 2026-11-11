@@ -1,5 +1,5 @@
 // Admin CLI.
-//   npm run cli -- init                                  write .env with a fresh master key
+//   npm run cli -- init [--public-url=https://…]         write .env with a fresh master key
 //   npm run cli -- create-project "My VTU" deposits      create a project (sales|deposits)
 //   npm run cli -- create-user <projectId> <email>       create a dashboard login (prompts for password)
 //   npm run cli -- send <projectId>                      send approved messages (for cron)
@@ -21,7 +21,17 @@ function askHidden(q) {
 
 if (cmd === 'init') {
   if (existsSync('.env')) { console.error('.env already exists; not overwriting it.'); process.exit(1); }
-  writeFileSync('.env', `RK_MASTER_KEY=${randomBytes(32).toString('base64')}\nPORT=8787\nRK_PUBLIC_URL=http://localhost:8787\n# ANTHROPIC_API_KEY=...\n`, { mode: 0o600 });
+  // --public-url=https://recover.example.com for a server behind HTTPS (cPanel, a VPS, Render…)
+  const pub = (args.find((a) => a.startsWith('--public-url=')) || '').slice(13).replace(/\/+$/, '');
+  if (pub && !/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(pub)) { console.error('--public-url must look like https://recover.example.com'); process.exit(1); }
+  const lines = [
+    `RK_MASTER_KEY=${randomBytes(32).toString('base64')}`,
+    'PORT=8787',
+    `RK_PUBLIC_URL=${pub || 'http://localhost:8787'}`,
+    ...(pub.startsWith('https://') ? ['RK_TRUST_PROXY=1'] : []),
+    '# ANTHROPIC_API_KEY=...',
+  ];
+  writeFileSync('.env', lines.join('\n') + '\n', { mode: 0o600 });
   console.log('Wrote .env (permissions 600). Back up RK_MASTER_KEY: without it, stored contacts and secrets cannot be decrypted.');
   process.exit(0);
 }
