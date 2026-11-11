@@ -13,7 +13,7 @@
   <a href="https://github.com/Light8749/recoverkit/actions/workflows/ci.yml"><img src="https://github.com/Light8749/recoverkit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.13-339933" alt="Node 22.13+">
   <img src="https://img.shields.io/badge/PHP-%E2%89%A57.4-777BB4" alt="PHP 7.4+">
-  <img src="https://img.shields.io/badge/license-all%20rights%20reserved-lightgrey" alt="License: all rights reserved">
+  <img src="https://img.shields.io/badge/server-all%20rights%20reserved-lightgrey" alt="Server license: all rights reserved"> <img src="https://img.shields.io/badge/SDKs-MIT-green" alt="SDKs and connectors: MIT">
 </p>
 
 ---
@@ -83,7 +83,7 @@ Then add RecoverKit to your app:
 
 ```html
 <script src="https://YOUR-RECOVERKIT-HOST/sdk/recoverkit.js"></script>
-<script>RecoverKit.init({ key: 'rk_pub_...', endpoint: 'https://YOUR-RECOVERKIT-HOST' });</script>
+<script>RecoverKit.init({ key: 'rk_pub_...' });</script>
 ```
 
 ```php
@@ -99,6 +99,21 @@ npx recoverkit-connector setup --app=/path/to/your/app              # MongoDB
 ```
 
 Setup reads only table and field **names**, suggests what counts as a sale, shows a dry run ("12,403 people · 3,210 bought · 9,193 never bought"), and waits for you to confirm. The full walkthrough is in **[docs/GUIDE.md](docs/GUIDE.md)**.
+
+## For a business's developer
+
+You don't need this repository to connect an app. Everything comes from the RecoverKit server the business uses:
+
+| You need | Where it comes from |
+|---|---|
+| Server address, public key, secret key | The business owner: dashboard → **Developers** (they can send you a guide link with everything filled in) |
+| Website script | `https://THEIR-RECOVERKIT-HOST/sdk/recoverkit.js` |
+| Node.js server SDK | `npm install recoverkit` |
+| PHP server SDK and SQL connector | `https://THEIR-RECOVERKIT-HOST/sdk/recoverkit-php.zip`, or the single files under `/sdk/php/` |
+| MongoDB connector | `npx recoverkit-connector@1 setup --app=.` |
+| Any other language | The HTTP API: `https://THEIR-RECOVERKIT-HOST/docs` |
+
+The SDKs and connectors are **MIT-licensed**, so you can ship them in your app.
 
 ## What's in the box
 
@@ -153,6 +168,8 @@ Issues and ideas are very welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** be
 
 ## License
 
-Copyright © 2026 Light8749. **All rights reserved.** The source code is public so you can read it, evaluate it and run it locally. It is not open source: you may not use it in production, redistribute it, or offer it as a service without written permission. See [LICENSE](LICENSE).
+**SDKs and connectors (`sdk/`): MIT.** Businesses that use RecoverKit, and their developers, can use them freely in their own apps. See [sdk/LICENSE](sdk/LICENSE).
+
+**The server (everything else): all rights reserved.** Copyright © 2026 Light8749. The source is public so you can read it, evaluate it and run it locally. You may not use it in production, redistribute it, or offer it as a service without written permission. See [LICENSE](LICENSE).
 
 Third-party materials keep their own licenses: the Apple HIG skills and the animation-principles skills in `.claude/skills` are MIT-licensed, and their license files are included.

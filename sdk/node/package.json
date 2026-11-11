@@ -1,0 +1,33 @@
+{
+  "name": "recoverkit",
+  "version": "1.0.0",
+  "description": "RecoverKit server SDK for Node.js: identify customers and record real sales from your backend. Emails and phones are hashed before they leave your server.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prepack": "node scripts/copy-core.mjs"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "keywords": ["recoverkit", "sales-recovery", "abandoned-checkout", "win-back", "sdk"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Light8749/recoverkit.git",
+    "directory": "sdk/node"
+  },
+  "homepage": "https://github.com/Light8749/recoverkit#readme",
+  "bugs": {
+    "url": "https://github.com/Light8749/recoverkit/issues"
+  }
+}

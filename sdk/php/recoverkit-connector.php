@@ -1,4 +1,5 @@
 <?php
+// RecoverKit SDK. MIT License, Copyright (c) 2026 Light8749. https://github.com/Light8749/recoverkit
 /**
  * RecoverKit Connector: a read-only helper that runs on YOUR server.
  *
@@ -97,7 +98,7 @@ final class RecoverKitConnector
         return $v;
     }
 
-    private function endpoint(): string { return rtrim($this->env['RK_ENDPOINT'] ?? 'https://api.recoverkit.app', '/'); }
+    private function endpoint(): string { return rtrim($this->need('RK_ENDPOINT'), '/'); }
 
     // ------------------------------------------------------------------ database (read-only)
 
@@ -726,7 +727,8 @@ final class RecoverKitConnector
 }
 
 // ---------------------------------------------------------------------- CLI
-if (PHP_SAPI === 'cli' && realpath($argv[0] ?? '') === __FILE__) {
+// Runs when called directly, or through the Composer launcher (vendor/bin/recoverkit-connector).
+if (PHP_SAPI === 'cli' && (realpath($argv[0] ?? '') === __FILE__ || defined('RECOVERKIT_CONNECTOR_CLI'))) {
     $args = array_slice($argv, 1);
     $cmd = $args[0] ?? 'help';
     $env = getenv();

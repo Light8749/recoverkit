@@ -20,6 +20,15 @@ Want to look around first? `npm run demo` starts a dashboard with sample data at
 
 Each business picks its own AI model under **Dashboard → AI model**. There's also a server-wide default (see *AI models* below). With no model set, built-in templates are used.
 
+## Onboarding a business's developer
+
+The developer never needs this repository or the server code. In the dashboard, the business owner opens **Developers**, which shows every step with their own keys and server address filled in:
+
+1. **Send this to your developer:** a guide link (valid 30 days) with the public key and server address. It contains no secret key and no data.
+2. **Create a secret key for your developer:** shown once, labelled `developer` in Settings, revocable at any time. Send it privately.
+
+The developer then adds the website script, records real sales from their server (`npm install recoverkit`, the PHP file, or the HTTP API from any language), and runs the read-only connector for past customers. The PHP SDK and connector download straight from the RecoverKit server (`/sdk/recoverkit-php.zip` or `/sdk/php/<file>`), and every server publishes the API reference at **`/docs`**. The SDKs and connectors are MIT-licensed, so they can ship in the business's app.
+
 ## How a real purchase is detected: three layers
 
 | Layer | Where it looks | Setup | Trusted as a purchase? |
@@ -37,7 +46,7 @@ A webhook and a server call for the same payment become one purchase (matched on
 ```html
 <script src="https://YOUR-RECOVERKIT-HOST/sdk/recoverkit.js"></script>
 <script>
-  RecoverKit.init({ key: 'rk_pub_...', endpoint: 'https://YOUR-RECOVERKIT-HOST' });
+  RecoverKit.init({ key: 'rk_pub_...' }); // endpoint defaults to the server the script came from
   // after login or signup:
   RecoverKit.identify({ email: user.email, phone: user.phone });
 </script>
@@ -74,7 +83,7 @@ Check the field paths against your gateway's current webhook docs. Gateways chan
 Node:
 
 ```js
-import { RecoverKit } from './sdk/node/index.js';
+import { RecoverKit } from 'recoverkit'; // npm install recoverkit
 const rk = new RecoverKit({ publicKey: 'rk_pub_...', secretKey: process.env.RK_SECRET_KEY, endpoint: 'https://YOUR-RECOVERKIT-HOST' });
 await rk.identify({ email: user.email, phone: user.phone, firstName: user.firstName }); // on signup
 await rk.trackPurchase({ email: user.email, amount: 50000, ref: order.paymentReference }); // amount in kobo

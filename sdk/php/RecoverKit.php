@@ -1,4 +1,5 @@
 <?php
+// RecoverKit SDK. MIT License, Copyright (c) 2026 Light8749. https://github.com/Light8749/recoverkit
 /**
  * RecoverKit server SDK for PHP / Laravel (layer 3).
  *
@@ -24,13 +25,16 @@ final class RecoverKit
     private float $timeout;
     private bool $throwOnError;
 
-    public function __construct(string $publicKey, string $secretKey, string $endpoint = 'https://api.recoverkit.app', float $timeout = 3.0, bool $throwOnError = false)
+    public function __construct(string $publicKey, string $secretKey, ?string $endpoint = null, float $timeout = 3.0, bool $throwOnError = false)
     {
         if (!preg_match('/^rk_pub_[0-9a-f]{24}$/', $publicKey)) {
             throw new InvalidArgumentException('RecoverKit: publicKey (rk_pub_...) required');
         }
         if (strpos($secretKey, 'rk_sec_') !== 0) {
             throw new InvalidArgumentException('RecoverKit: secretKey (rk_sec_...) required');
+        }
+        if ($endpoint === null || $endpoint === '') {
+            throw new InvalidArgumentException('RecoverKit: endpoint required (your RecoverKit server address, e.g. https://recover.example.com)');
         }
         $parts = parse_url($endpoint);
         $host = $parts['host'] ?? '';

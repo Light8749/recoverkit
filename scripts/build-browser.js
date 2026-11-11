@@ -14,7 +14,7 @@ export function buildBrowserBundle() {
       .replace(/^export (const|function|let|class|async function) /gm, '$1 ');
     return `// ---- ${f} ----\n${src}`;
   });
-  return `/*! RecoverKit browser SDK */\n(function () {\n'use strict';\n${parts.join('\n')}\n})();\n`;
+  return `/*! RecoverKit browser SDK. MIT License, Copyright (c) 2026 Light8749. https://github.com/Light8749/recoverkit */\n(function () {\n'use strict';\n${parts.join('\n')}\n})();\n`;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {

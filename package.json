@@ -17,7 +17,8 @@
     "test:mysql": "node --test --test-reporter=spec test/connector-mysql.test.js",
     "test:mongo": "cd sdk/connector-node && npm ci --no-fund --silent && npm test",
     "check": "node scripts/check-syntax.js && php -l sdk/php/RecoverKit.php && php -l sdk/php/recoverkit-connector.php && php -l sdk/php/recoverkit-detect.php",
-    "audit": "npm audit --omit=dev"
+    "audit": "npm audit --omit=dev",
+    "pretest": "node sdk/node/scripts/copy-core.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.7.0"

@@ -545,3 +545,71 @@ test('dashboard: real-browser origin headers (Origin: null + Sec-Fetch-Site)', a
   const blocked = await fetch(base + '/login', h({ Origin: 'https://evil.example' }));
   assert.match(blocked.headers.get('content-type'), /text\/html/);
 });
+
+test('developers: setup page, secret key shown once, share link, docs and downloads', async () => {
+  const cookie = (await login()).cookie.split(';')[0];
+  assert.equal((await get('/dashboard/developers')).headers.get('location'), '/login', 'needs a session');
+  const r = await get('/dashboard/developers', cookie);
+  assert.equal(r.status, 200);
+  const html = await r.text();
+  assert.ok(html.includes(project.publicKey), 'public key filled in');
+  assert.ok(html.includes(`${base}/sdk/php/recoverkit-connector.php`), 'download commands point at this server');
+  assert.ok(!/rk_sec_key_/.test(html), 'no secret key on the page by default');
+  assert.ok(!/<script/i.test(html) && !/style="/.test(html), 'CSP-safe');
+
+  // Create a key for the developer: shown once, works, and is labelled.
+  const form = (o) => ({ method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(o) });
+  assert.equal((await fetch(base + '/dashboard/developers/key', form({ _csrf: 'wrong' }))).status, 403);
+  const made = await (await fetch(base + '/dashboard/developers/key', form({ _csrf: csrfOf(html) }))).text();
+  const key = /RK_SECRET_KEY=(rk_sec_[A-Za-z0-9_-]+)/.exec(made)?.[1];
+  assert.ok(key, 'secret key shown in the .env block');
+  const dev = new RecoverKit({ publicKey: project.publicKey, secretKey: key, endpoint: base, throwOnError: true });
+  assert.equal((await dev.identify({ email: 'dev-check@adavtu.ng' })).ok, true);
+  assert.equal(app.db.get("SELECT COUNT(*) n FROM api_keys WHERE project_id = ? AND label = 'developer'", project.id).n, 1);
+  assert.ok(!(await (await get('/dashboard/developers', cookie)).text()).includes(key), 'not shown again');
+
+  // Share link: public key and endpoint only, no session; tampered links fail.
+  const link = /value="(http[^"]+\/dev\/[^"]+)"/.exec(html)?.[1];
+  assert.ok(link);
+  const shared = await fetch(link);
+  assert.equal(shared.status, 200);
+  const sharedHtml = await shared.text();
+  assert.ok(sharedHtml.includes(project.publicKey) && sharedHtml.includes('Ada VTU'));
+  assert.ok(!/rk_sec_key_|_csrf/.test(sharedHtml), 'no secrets or forms');
+  assert.equal(shared.headers.get('x-robots-tag'), 'noindex');
+  const token = link.split('/dev/')[1];
+  assert.equal((await fetch(`${base}/dev/${token.slice(0, -2)}xx`)).status, 404);
+  const { signToken } = await import('../src/crypto.js');
+  const unsub = signToken(app.keys.sign, { p: project.id, u: 'p_x' }, 3600);
+  assert.equal((await fetch(`${base}/dev/${unsub}`)).status, 404, 'an unsubscribe token is not a guide link');
+  const expired = signToken(app.keys.sign, { g: project.id }, -10);
+  assert.equal((await fetch(`${base}/dev/${expired}`)).status, 404, 'expired links stop working');
+
+  // Public docs.
+  const docs = await fetch(base + '/docs');
+  assert.equal(docs.status, 200);
+  const docsHtml = await docs.text();
+  assert.match(docsHtml, /API reference/);
+  assert.match(docsHtml, /rk_pub_YOUR_PUBLIC_KEY/);
+
+  // Downloads: exact files, saved not run, and a valid zip.
+  const php = await fetch(base + '/sdk/php/recoverkit-connector.php');
+  assert.equal(php.status, 200);
+  assert.match(php.headers.get('content-type'), /^text\/plain/);
+  assert.match(php.headers.get('content-disposition'), /attachment; filename="recoverkit-connector.php"/);
+  assert.match(await php.text(), /MIT License/);
+  assert.equal((await fetch(base + '/sdk/php/..%2F..%2Fsrc%2Fconfig.js')).status, 404);
+  assert.equal((await fetch(base + '/sdk/php/RecoverKitXphp')).status, 404, 'dots are literal in routes');
+  const zip = Buffer.from(await (await fetch(base + '/sdk/recoverkit-php.zip')).arrayBuffer());
+  assert.equal(zip.readUInt32LE(0), 0x04034b50);
+  const { execFileSync } = await import('node:child_process');
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(dir, 'php.zip'), zip);
+  const listing = execFileSync('unzip', ['-l', join(dir, 'php.zip')], { encoding: 'utf8' });
+  for (const f of ['RecoverKit.php', 'recoverkit-connector.php', 'recoverkit-detect.php', 'LICENSE', 'README.txt']) assert.match(listing, new RegExp(`recoverkit-php/${f.replace('.', '\\.')}`));
+  execFileSync('unzip', ['-tq', join(dir, 'php.zip')]);
+});
+
+test('SDKs require an explicit endpoint', () => {
+  assert.throws(() => new RecoverKit({ publicKey: project.publicKey, secretKey: 'rk_sec_x' }), /endpoint required/);
+});

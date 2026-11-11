@@ -122,7 +122,7 @@ export class Router {
   constructor() { this.routes = []; }
   add(method, path, handler) {
     // '/v1/webhooks/:provider/:pk' -> named groups limited to safe characters
-    const re = new RegExp('^' + path.replace(/:([a-zA-Z]+)/g, '(?<$1>[A-Za-z0-9_-]{1,128})') + '/?$');
+    const re = new RegExp('^' + path.replace(/\./g, '\\.').replace(/:([a-zA-Z]+)/g, '(?<$1>[A-Za-z0-9_-]{1,128})') + '/?$');
     this.routes.push({ method, re, handler });
     return this;
   }

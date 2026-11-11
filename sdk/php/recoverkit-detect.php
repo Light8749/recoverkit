@@ -1,4 +1,5 @@
 <?php
+// RecoverKit SDK. MIT License, Copyright (c) 2026 Light8749. https://github.com/Light8749/recoverkit
 /**
  * Finds an app's database login from its own config files, whatever language it's written in.
  * The connector reads the DATABASE, so the app can be PHP, Node, Python, Ruby, Java, .NET or Go;

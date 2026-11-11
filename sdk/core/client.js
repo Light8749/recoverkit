@@ -23,7 +23,8 @@ function randomAnonId() {
  */
 export function createClient({ key, endpoint, storage, transport, debug = false }) {
   if (!KEY_RE.test(key || '')) throw new Error('RecoverKit: init needs your public key (rk_pub_...)');
-  const url = String(endpoint || 'https://api.recoverkit.app').replace(/\/+$/, '') + '/v1/collect';
+  if (!endpoint) throw new Error('RecoverKit: init needs endpoint (your RecoverKit server address)');
+  const url = String(endpoint).replace(/\/+$/, '') + '/v1/collect';
   const state = { anonId: null, ids: [], queue: [], timer: null, sending: false, ready: null, disabled: false };
   const log = (...a) => { if (debug && typeof console !== 'undefined') console.log('[recoverkit]', ...a); };
 

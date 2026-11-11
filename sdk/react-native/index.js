@@ -1,8 +1,9 @@
+// RecoverKit SDK. MIT License, Copyright (c) 2026 Light8749. https://github.com/Light8749/recoverkit
 // RecoverKit for React Native / Expo (layer 1 for apps).
 //
 //   import AsyncStorage from '@react-native-async-storage/async-storage';
 //   import { RecoverKit } from 'recoverkit/sdk/react-native';
-//   const rk = RecoverKit.init({ key: 'rk_pub_...', endpoint: 'https://api.recoverkit.app', storage: AsyncStorage });
+//   const rk = RecoverKit.init({ key: 'rk_pub_...', endpoint: 'https://YOUR-RECOVERKIT-HOST', storage: AsyncStorage });
 //   rk.screen('Pricing');               // call from your navigation listener
 //   rk.identify({ email, phone });      // after login
 //   rk.checkoutStarted(250000);         // when they open the payment sheet

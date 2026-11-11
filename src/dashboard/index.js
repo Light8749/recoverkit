@@ -1,12 +1,13 @@
 // Business dashboard: overview, leads, messages, payments, AI model, channels, settings.
 // Server-rendered HTML, no JavaScript, strict CSP. Every dynamic value is escaped.
-import { randomToken, sha256Hex, safeEqual, verifyPassword, hashPassword } from '../crypto.js';
+import { randomToken, sha256Hex, safeEqual, verifyPassword, hashPassword, signToken, verifyToken } from '../crypto.js';
 import { HttpError, sendHtml, redirect, readBody, parseForm, parseCookies, clientIp } from '../http.js';
 import { mask } from '../channels.js';
 import { PRESETS, FIELD_NAMES, ALGORITHMS } from '../gateways.js';
 import { AI_PROVIDERS } from '../ai.js';
 import { normalizeEmail } from '../../sdk/core/identity.js';
 import { kobo } from './mascot.js';
+import { developerGuide, apiReference } from './devguide.js';
 import { esc, money, ago, icon, csrfField, banner, page, group, row, switchRow, field, select, segmented, bar, pill, empty } from './ui.js';
 
 export { esc };
@@ -20,7 +21,7 @@ const STAGE_LABEL = {
 };
 const FIELD_LABEL = { ref: 'Payment reference', amount: 'Amount', currency: 'Currency', email: 'Customer email', phone: 'Customer phone', name: 'Customer name', time: 'Paid at', eventId: 'Unique event ID', kind: 'Sale or deposit tag' };
 
-export function createDashboard({ db, config, projects, engine, outreach, people, limiter, drafter, resolveAi }) {
+export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi }) {
   const secureCookie = config.publicUrl.startsWith('https://');
   const cookie = (v, maxAge) => `rk_session=${v}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
 
@@ -72,7 +73,8 @@ export function createDashboard({ db, config, projects, engine, outreach, people
       body: `<div class="auth"><div class="auth-hero">${kobo({ mode: 'hero', size: 200, title: 'Kobo the pigeon flying out and bringing back a coin' })}</div>${banner(url.searchParams)}
       <form method="post" action="/login">
         ${group('', [field('email', 'Email', '', { type: 'email', max: 254, required: true, autocomplete: 'username', placeholder: 'you@yourbusiness.ng' }), field('password', 'Password', '', { type: 'password', max: 200, required: true, autocomplete: 'current-password', placeholder: 'Required' })])}
-        <button class="btn prominent wide">Sign in</button></form></div>`,
+        <button class="btn prominent wide">Sign in</button></form>
+      <p class="subtitle">Connecting an app for a business? <a href="/docs">Developer docs</a></p></div>`,
     }));
   }
 
@@ -419,7 +421,7 @@ export function createDashboard({ db, config, projects, engine, outreach, people
     sendHtml(res, 200, page({
       title: 'Settings', active: 'settings', ctx,
       body: `${banner(url.searchParams)}${extra}
-      <div class="mobile-only">${group('', [row('Payments', '', { href: '/dashboard/payments' }), row('AI model', '', { href: '/dashboard/ai' }), row('Channels', '', { href: '/dashboard/channels' })])}</div>
+      <div class="mobile-only">${group('', [row('Payments', '', { href: '/dashboard/payments' }), row('AI model', '', { href: '/dashboard/ai' }), row('Channels', '', { href: '/dashboard/channels' }), row('Developers', '', { href: '/dashboard/developers' })])}</div>
       <form method="post" action="/dashboard/settings">${csrfField(ctx)}
         ${group('Your business', [
           `<label class="row field stacked"><span class="row-label">Your voice<small>How you talk to customers. Slang or Pidgin welcome. Mention anything that's genuinely limited.</small></span><textarea name="voiceProfile" rows="4" maxlength="2000">${esc(p.voice_profile)}</textarea></label>`,
@@ -432,11 +434,12 @@ export function createDashboard({ db, config, projects, engine, outreach, people
         row('Public key', `<code>${esc(p.public_key)}</code>`, { sub: 'Safe to put in your website or app' }),
         `<div class="row"><pre>&lt;script src="${esc(base)}/sdk/recoverkit.js"&gt;&lt;/script&gt;
 &lt;script&gt;RecoverKit.init({ key: '${esc(p.public_key)}', endpoint: '${esc(base)}' });&lt;/script&gt;</pre></div>`,
+        row('Full setup for your developer', '', { href: '/dashboard/developers', sub: 'Website, server, payments and past customers, with your keys filled in' }),
       ], 'Then call <code>RecoverKit.identify({ email, phone })</code> after login, and <code>trackPurchase</code> from your server when a sale really happens.')}
       ${group('Existing data (read-only connector)', runs.length
         ? runs.map((r) => row(`Synced ${ago(r.at)}<small>${esc(r.source)} ${esc(r.version)}</small>`, `${Number(r.people)} people · ${Number(r.events)} records · ${Number(r.new_events)} new`))
         : [row('Not connected yet', '', { sub: 'Bring in your past customers without exporting anything' })],
-        `The connector runs on your own server with a read-only database login. Only hashes, dates and amounts leave it, and every query it runs is logged on your server. Set it up with <code>php recoverkit-connector.php setup</code>. To cut it off instantly, revoke the secret key it uses below.`)}
+        `The connector runs on your own server with a read-only database login. Only hashes, dates and amounts leave it, and every query it runs is logged on your server. Set it up from the <a href="/dashboard/developers">Developers</a> page. To cut it off instantly, revoke the secret key it uses below.`)}
       ${group('Secret keys', [
         ...keys.map((k) => `<div class="row"><span class="row-label"><code>${esc(k.id)}</code><small>${esc(k.label)} · created ${ago(k.created_at)}</small></span><span class="row-value">${k.revoked_at ? pill('Revoked') : `<form method="post" action="/dashboard/keys/${esc(k.id)}/revoke">${csrfField(ctx)}<button class="btn plain destructive small">Revoke</button></form>`}</span></div>`),
       ], 'For your server only. Never put a secret key in a website or app.')}
@@ -469,6 +472,55 @@ export function createDashboard({ db, config, projects, engine, outreach, people
     projects.revokeSecretKey(ctx.project.id, params.id);
     projects.audit(ctx.project.id, ctx.user.email, 'key_revoked', params.id);
     back(res, '/dashboard/settings', 'Key revoked.');
+  }
+
+  // ================= developers =================
+  const GUIDE_DAYS = 30;
+  const guideLink = (projectId) => `${config.publicUrl}/dev/${signToken(keys.sign, { g: projectId }, GUIDE_DAYS * 86400)}`;
+
+  function developersPage(req, res, _p, url, secretKey = null) {
+    const ctx = requireSession(req);
+    const p = ctx.project;
+    const share = group('Send this to your developer', [
+      `<div class="row share-row"><input class="copy" readonly value="${esc(guideLink(p.id))}" aria-label="Guide link for your developer"></div>`,
+    ], `A read-only copy of this page with your public key filled in, valid for ${GUIDE_DAYS} days. It doesn't contain a secret key or your data. Create a secret key below and send it separately, in a private message.`);
+    const keyForm = secretKey ? '' : `<form method="post" action="/dashboard/developers/key">${csrfField(ctx)}<button class="btn tinted">Create a secret key for your developer</button></form>`;
+    sendHtml(res, 200, page({
+      title: 'Developers', active: 'developers', ctx,
+      subtitle: 'Everything your developer needs to connect your website, server and past customers. They don\'t need any RecoverKit code or access to this dashboard.',
+      body: `${banner(url.searchParams)}${share}${keyForm}<div class="guide">${developerGuide({ base: config.publicUrl, publicKey: p.public_key, secretKey, mode: p.gateway_mode })}</div>`,
+    }));
+  }
+
+  async function developerKeyAction(req, res, _p, url) {
+    const { ctx } = await postCtx(req);
+    if (!limiter.hit(`devkey:${ctx.project.id}`, 10, 60 * 60e3)) return back(res, '/dashboard/developers', null, 'Too many new keys. Try again in an hour.');
+    const key = projects.createSecretKey(ctx.project.id, 'developer');
+    projects.audit(ctx.project.id, ctx.user.email, 'key_created', 'developer');
+    developersPage(req, res, null, url, key);
+  }
+
+  /** The shareable guide: public key and server address only, no session needed. */
+  function sharedGuidePage(_req, res, params) {
+    const t = verifyToken(keys.sign, params.token);
+    const p = t?.g ? projects.byId(t.g) : null;
+    if (!p) {
+      return sendHtml(res, 404, page({ wide: true, title: 'This link has expired', subtitle: 'Ask the business owner for a new link from their RecoverKit dashboard (Developers page).', body: '' }));
+    }
+    sendHtml(res, 200, page({
+      wide: true, title: `Connect ${p.name} to RecoverKit`,
+      subtitle: 'Developer setup guide. You don\'t need any RecoverKit code: everything is below.',
+      body: `<div class="guide docs">${developerGuide({ base: config.publicUrl, publicKey: p.public_key, mode: p.gateway_mode, links: false })}</div>
+        <p class="docs-intro">Full API reference: <a href="/docs#api">${esc(config.publicUrl)}/docs</a></p>`,
+    }), { 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' });
+  }
+
+  function docsPage(_req, res) {
+    sendHtml(res, 200, page({
+      wide: true, title: 'RecoverKit developer docs',
+      subtitle: 'Connect a website, a server and past customers to this RecoverKit server. Your keys are on the Developers page of your dashboard.',
+      body: `<div class="guide docs">${developerGuide({ base: config.publicUrl, publicKey: null, links: false })}${apiReference(config.publicUrl)}</div>`,
+    }));
   }
 
   // ================= draft & send =================
@@ -504,5 +556,6 @@ export function createDashboard({ db, config, projects, engine, outreach, people
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
     aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction,
     settingsPage, settingsAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, sendAction,
+    developersPage, developerKeyAction, sharedGuidePage, docsPage,
   };
 }

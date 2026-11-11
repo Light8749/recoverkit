@@ -20,6 +20,11 @@ You MAY NOT, without prior written permission from the copyright holder:
 To ask for permission or a commercial license, open an issue in this repository or contact
 the copyright holder.
 
+Exception: the SDKs and connectors in the sdk/ folder (browser, React Native, Node.js and PHP
+SDKs, and the read-only connectors) are licensed under the MIT License instead; see
+sdk/LICENSE. Businesses that use a RecoverKit server, and their developers, may put those files
+in their own apps without asking.
+
 Third-party components keep their own licenses. In particular, the files under
 .claude/skills/ come from third parties under the MIT License; their license texts are in
 .claude/skills/HIG-LICENSE.txt and .claude/skills/ANIMATION-PRINCIPLES-LICENSE.txt.

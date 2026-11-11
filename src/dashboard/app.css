@@ -205,6 +205,25 @@ details.danger > summary { color: var(--red); }
 details.danger form { background: var(--bg-2); border-radius: var(--radius); padding: 14px 16px; }
 details.danger p { margin: 0 0 12px; color: var(--label-2); font-size: 14px; }
 
+/* ---------- developer guide ---------- */
+.row.code-row { flex-direction: column; align-items: stretch; gap: 6px; }
+.code-label { font-size: 12px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: .04em; }
+.code-row pre { background: var(--fill); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; word-break: normal; line-height: 1.5; max-width: 100%; }
+.row-sub { color: var(--label-2); font-size: 13px; margin-left: 10px; }
+details.option { margin: 0 0 8px; background: var(--bg-2); border-radius: var(--radius); }
+details.option > summary { color: var(--label); padding: 10px 16px; }
+details.option > summary small { display: block; color: var(--label-2); font-weight: 400; font-size: 13px; }
+details.option > summary::before { color: var(--blue); }
+details.option .option-body { padding: 0 8px 4px; }
+details.option .group { margin-bottom: 8px; }
+.group-foot.lead { margin: 0 0 12px; }
+.section-title { font-size: 24px; margin: 36px 0 14px; letter-spacing: -.01em; }
+.card.api p { margin: 0 0 10px; color: var(--label-2); font-size: 14px; }
+.card.api p.small { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 6px; }
+.card.api pre { background: var(--fill); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; word-break: normal; line-height: 1.5; }
+.docs-intro { color: var(--label-2); max-width: 64ch; margin: 0 0 24px; }
+.share-row input.copy { flex: 1; }
+
 /* ---------- sign in / standalone ---------- */
 .signed-out .content { max-width: 420px; padding-top: 4vh; }
 .signed-out .page-head { justify-content: center; text-align: center; }

@@ -20,6 +20,7 @@ import { assets } from './dashboard/ui.js';
 import { createHash } from 'node:crypto';
 import { buildBrowserBundle } from '../scripts/build-browser.js';
 import { brandSvg } from '../scripts/build-brand.js';
+import { loadDownloads, PHP_FILES } from './downloads.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -46,7 +47,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     resolveAi, logger, fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls,
   });
   const outreach = createOutreach({ db, keys, config, projects, people, engine, drafter, fetch, logger });
-  const deps = { db, config, projects, people, engine, limiter, outreach, drafter, resolveAi };
+  const deps = { db, config, keys, projects, people, engine, limiter, outreach, drafter, resolveAi };
   const ingest = createIngest(deps);
   const webhooks = createWebhooks(deps);
   const connector = createConnectorApi({ ...deps, requireSecret: ingest.requireSecret, deps: { fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls } });
@@ -56,6 +57,11 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   assets.css = `/static/app.css?v=${createHash('sha256').update(css).digest('hex').slice(0, 10)}`;
   const sdkJs = buildBrowserBundle();
   const favicon = brandSvg('mark');
+  const downloads = loadDownloads();
+  // Downloads are plain text with an attachment header: a browser saves them, never runs them.
+  const download = (name, body, type = 'text/plain; charset=utf-8') => (_q, res) => send(res, 200, body, {
+    'Content-Type': type, 'Content-Disposition': `attachment; filename="${name}"`, 'Cache-Control': 'public, max-age=3600',
+  });
 
   const r = new Router()
     .add('GET', '/health', (_q, res) => send(res, 200, { ok: true }))
@@ -66,6 +72,9 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('GET', '/sdk/recoverkit.js', (_q, res) => send(res, 200, sdkJs, {
       'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', 'Cross-Origin-Resource-Policy': 'cross-origin',
     }))
+    .add('GET', '/sdk/recoverkit-php.zip', download('recoverkit-php.zip', downloads.zip, 'application/zip'))
+    .add('GET', '/sdk/LICENSE', download('LICENSE', downloads.license))
+    .add('GET', '/docs', dash.docsPage)
     .add('OPTIONS', '/v1/collect', ingest.collectPreflight)
     .add('POST', '/v1/collect', ingest.collect)
     .add('POST', '/v1/server/events', ingest.serverEvents)
@@ -97,13 +106,17 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/dashboard/ai/reset', dash.aiResetAction)
     .add('GET', '/dashboard/channels', dash.channelsPage)
     .add('POST', '/dashboard/channels', dash.channelsAction)
+    .add('GET', '/dashboard/developers', dash.developersPage)
+    .add('POST', '/dashboard/developers/key', dash.developerKeyAction)
     .add('GET', '/dashboard/settings', dash.settingsPage)
     .add('POST', '/dashboard/settings', dash.settingsAction)
     .add('POST', '/dashboard/keys', dash.newKeyAction)
     .add('POST', '/dashboard/keys/:id/revoke', dash.revokeKeyAction);
+  for (const f of PHP_FILES) r.add('GET', `/sdk/php/${f}`, download(f, downloads.php[f]));
 
   // Unsubscribe links carry a signed token, so they're routed separately.
   const UNSUB = /^\/u\/([A-Za-z0-9_-]{10,400}\.[A-Za-z0-9_-]{20,100})$/;
+  const GUIDE = /^\/dev\/([A-Za-z0-9_-]{10,400}\.[A-Za-z0-9_-]{20,100})$/;
   async function unsubscribe(req, res, token) {
     if (req.method === 'GET') {
       return sendHtml(res, 200, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${assets.css}">
@@ -124,6 +137,8 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     try {
       const u = UNSUB.exec(url.pathname);
       if (u) return await unsubscribe(req, res, u[1]);
+      const g = GUIDE.exec(url.pathname);
+      if (g) return req.method === 'GET' ? dash.sharedGuidePage(req, res, { token: g[1] }) : send(res, 405, { error: 'method not allowed' });
       const m = r.match(req.method, url.pathname);
       if (!m) return send(res, 404, { error: 'not found' });
       if (m.status) return send(res, m.status, { error: 'method not allowed' });

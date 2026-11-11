@@ -1,20 +1,23 @@
+// RecoverKit SDK. MIT License, Copyright (c) 2026 Light8749. https://github.com/Light8749/recoverkit
 // RecoverKit server SDK for Node.js (layer 3).
 //
-//   import { RecoverKit } from 'recoverkit/sdk/node/index.js';
-//   const rk = new RecoverKit({ publicKey: 'rk_pub_...', secretKey: process.env.RK_SECRET_KEY });
+//   npm install recoverkit
+//   import { RecoverKit } from 'recoverkit';
+//   const rk = new RecoverKit({ publicKey: process.env.RK_PUBLIC_KEY, secretKey: process.env.RK_SECRET_KEY, endpoint: process.env.RK_ENDPOINT });
 //   await rk.identify({ email: user.email, phone: user.phone, firstName: user.firstName });
 //   // right after your VTU vendor API returns success:
 //   await rk.trackPurchase({ email: user.email, amount: 50000, ref: order.id });
 //
 // Calls never throw by default: a RecoverKit outage must not break your checkout.
-import { identityHashes } from '../core/identity.js';
+import { identityHashes } from './lib/identity.js';
 
-export { identityHashes, normalizeEmail, normalizePhone } from '../core/identity.js';
+export { identityHashes, normalizeEmail, normalizePhone } from './lib/identity.js';
 
 export class RecoverKit {
-  constructor({ publicKey, secretKey, endpoint = 'https://api.recoverkit.app', timeoutMs = 3000, throwOnError = false, fetch: f } = {}) {
+  constructor({ publicKey, secretKey, endpoint, timeoutMs = 3000, throwOnError = false, fetch: f } = {}) {
     if (!/^rk_pub_[0-9a-f]{24}$/.test(publicKey || '')) throw new Error('RecoverKit: publicKey (rk_pub_...) required');
     if (!/^rk_sec_/.test(secretKey || '')) throw new Error('RecoverKit: secretKey (rk_sec_...) required; keep it on your server only');
+    if (!endpoint) throw new Error('RecoverKit: endpoint required (your RecoverKit server address, e.g. https://recover.example.com)');
     const u = new URL(endpoint);
     const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
     if (u.protocol !== 'https:' && !local) throw new Error('RecoverKit: endpoint must use https');

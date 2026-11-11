@@ -11,11 +11,12 @@ const app = join(out, 'recoverkit');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 
-for (const dir of ['src', 'sdk/core', 'sdk/browser', 'assets/brand']) cpSync(join(root, dir), join(app, dir), { recursive: true });
+for (const dir of ['src', 'sdk/core', 'sdk/browser', 'sdk/php', 'assets/brand']) cpSync(join(root, dir), join(app, dir), { recursive: true });
 mkdirSync(join(app, 'scripts'), { recursive: true });
 for (const f of ['build-browser.js', 'build-brand.js']) copyFileSync(join(root, 'scripts', f), join(app, 'scripts', f));
 for (const f of ['app.cjs', 'LICENSE']) copyFileSync(join(root, f), join(app, f));
 copyFileSync(join(root, 'deploy/CPANEL.md'), join(app, 'DEPLOY.md'));
+copyFileSync(join(root, 'sdk/LICENSE'), join(app, 'sdk/LICENSE'));
 
 // Only runtime dependencies: cPanel's "Run NPM Install" also installs devDependencies otherwise.
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));

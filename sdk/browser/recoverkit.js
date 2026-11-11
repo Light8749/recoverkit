@@ -1,8 +1,8 @@
 // RecoverKit browser SDK (layer 1).
 //
-//   <script src="https://cdn.example.com/recoverkit.js"></script>
+//   <script src="https://YOUR-RECOVERKIT-HOST/sdk/recoverkit.js"></script>
 //   <script>
-//     RecoverKit.init({ key: 'rk_pub_...', endpoint: 'https://api.recoverkit.app' });
+//     RecoverKit.init({ key: 'rk_pub_...' }); // endpoint defaults to the server this file came from
 //     // after login or signup:
 //     RecoverKit.identify({ email: user.email, phone: user.phone });
 //   </script>
@@ -19,6 +19,8 @@ const DEFAULT_SUCCESS = [
 const CHECKOUT_WORDS = /\b(checkout|pay now|buy now|place order|proceed to pay(ment)?|subscribe|add to cart|recharge now|buy data|buy airtime)\b/i;
 
 let client = null;
+// The server this script was loaded from: the default endpoint when init() isn't given one.
+const SCRIPT_ORIGIN = (() => { try { return new URL(document.currentScript.src).origin; } catch { return null; } })();
 
 const storage = {
   get(k) { try { return window.localStorage.getItem(k); } catch { return null; } },
@@ -110,7 +112,7 @@ export const RecoverKit = {
     if (respectPrivacy && (navigator.globalPrivacyControl === true || navigator.doNotTrack === '1')) {
       return RecoverKit; // user asked not to be tracked
     }
-    client = createClient({ key: opts.key, endpoint: opts.endpoint, storage, transport, debug: opts.debug });
+    client = createClient({ key: opts.key, endpoint: opts.endpoint || SCRIPT_ORIGIN, storage, transport, debug: opts.debug });
     if (opts.autocapture !== false) {
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => autocapture(opts));
       else autocapture(opts);

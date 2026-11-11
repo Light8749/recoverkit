@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// RecoverKit SDK. MIT License, Copyright (c) 2026 Light8749. https://github.com/Light8749/recoverkit
 // RecoverKit Connector for MongoDB apps: a read-only helper that runs on YOUR server.
 //
 // It reads your MongoDB where it lives (nothing is exported), works out who signed up,
@@ -248,7 +249,7 @@ export class Connector {
 
   need(k) { const v = this.env[k]; if (!v) throw new Error(`${k} is not set`); return v; }
   path(f) { return join(this.dir, f); }
-  endpoint() { return String(this.env.RK_ENDPOINT || 'https://api.recoverkit.app').replace(/\/+$/, ''); }
+  endpoint() { return String(this.need('RK_ENDPOINT')).replace(/\/+$/, ''); }
   hashes(user) { return identityHashes(this.need('RK_PUBLIC_KEY'), user); }
 
   log(op, coll, detail, rows) {
