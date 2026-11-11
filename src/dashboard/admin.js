@@ -140,7 +140,8 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
         <button class="btn prominent">Add business</button></form>
       ${rows.length ? group(`${rows.length} business${rows.length === 1 ? '' : 'es'}`, rows, 'Recovered revenue is all time.') : empty('No businesses yet', 'Add the first one above.')}
       ${group('Email', [row('Invites and password resets', mailer.enabled ? pill(`Sent by ${mailer.mode}`, 'green') : pill('Not set up', 'orange'),
-        { sub: mailer.enabled ? 'Links are emailed, and shown here too' : 'Links are shown here for you to send. Set RK_MAIL_FROM in .env to email them.' })])}`,
+        { sub: mailer.enabled ? 'Links are emailed, and shown here too' : 'Links are shown here for you to send. Set RK_MAIL_FROM in .env to email them.' })])}
+      ${mailer.enabled ? `<form method="post" action="/admin/mail-test">${csrfField(ctx)}<button class="btn tinted">Send a test email to ${esc(ctx.user.email)}</button></form>` : ''}`,
     }));
   }
 
@@ -214,8 +215,16 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
     adminBusinessPage(req, res, { id: u.project_id }, url, linkBanner(u.email, token, sent, invite ? 'Invite' : 'Reset link'));
   }
 
+  async function mailTestAction(req, res) {
+    const { ctx } = await adminPost(req);
+    if (!limiter.hit(`mailtest:${ctx.user.id}`, 5, 60 * 60e3)) return back(res, '/admin', null, 'Test limit reached. Try again in an hour.');
+    const r = mailer.enabled ? await mailer.send({ to: ctx.user.email, subject: 'RecoverKit test email', text: `It works. Invites and password resets from ${config.publicUrl} will be sent this way (${mailer.mode}).\n` }) : { ok: false, error: 'email is not set up' };
+    if (r.ok) back(res, '/admin', `Sent to ${ctx.user.email} by ${mailer.mode}. Check your inbox (and spam).`);
+    else back(res, '/admin', null, `Email failed: ${r.error}`);
+  }
+
   return {
-    forgotPage, forgot, resetPage, reset, changePasswordAction, passwordGroup,
+    mailTestAction, forgotPage, forgot, resetPage, reset, changePasswordAction, passwordGroup,
     adminPage, addBusinessAction, adminBusinessPage, addUserAction, userLinkAction,
   };
 }

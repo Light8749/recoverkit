@@ -1,10 +1,13 @@
 // System email (password resets, invites): not customer follow-ups, which use each business's channels.
 //   RK_MAIL_FROM        e.g. "RecoverKit <no-reply@yourdomain.com>"  (required to send anything)
+//   RK_SMTP_HOST        send through SMTP (Brevo: smtp-relay.brevo.com), with RK_SMTP_PORT (587),
+//                       RK_SMTP_USER and RK_SMTP_PASS; otherwise...
 //   RK_RESEND_API_KEY   send through Resend's API; otherwise...
 //   RK_SENDMAIL         path to sendmail (default /usr/sbin/sendmail, which cPanel hosting has)
 // With no RK_MAIL_FROM, nothing is sent and the admin copies links by hand.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { smtpSend, addressOf } from './smtp.js';
 
 const HEADER_SAFE = /^[^\r\n]{1,300}$/;
 const ADDRESS = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -13,6 +16,13 @@ export function mailFromEnv(env = process.env) {
   const from = (env.RK_MAIL_FROM || '').trim();
   if (!from) return { mode: 'none' };
   if (!HEADER_SAFE.test(from)) throw new Error('RK_MAIL_FROM must be one line');
+  if (env.RK_SMTP_HOST) {
+    const host = env.RK_SMTP_HOST.trim();
+    if (!/^[a-z0-9.-]+$/i.test(host)) throw new Error('RK_SMTP_HOST must be a host name like smtp-relay.brevo.com');
+    const port = Number(env.RK_SMTP_PORT || 587);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('RK_SMTP_PORT must be a port number');
+    return { mode: 'smtp', from, host, port, user: env.RK_SMTP_USER || '', pass: env.RK_SMTP_PASS || '' };
+  }
   if (env.RK_RESEND_API_KEY) return { mode: 'resend', from, apiKey: env.RK_RESEND_API_KEY };
   const path = env.RK_SENDMAIL || '/usr/sbin/sendmail';
   return existsSync(path) ? { mode: 'sendmail', from, path } : { mode: 'none' };
@@ -23,7 +33,8 @@ export function buildMessage({ from, to, subject, text }) {
   if (!ADDRESS.test(to) || !HEADER_SAFE.test(subject) || !HEADER_SAFE.test(from)) throw new Error('bad email header');
   const body = String(text).replace(/\r?\n/g, '\r\n');
   return [
-    `From: ${from}`, `To: ${to}`, `Subject: ${subject}`, 'MIME-Version: 1.0',
+    `From: ${from}`, `To: ${to}`, `Subject: ${subject}`, `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`,
+    `Message-ID: <${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}@recoverkit>`, 'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: 8bit', 'Auto-Submitted: auto-generated', '', body, '',
   ].join('\r\n');
 }
@@ -31,6 +42,12 @@ export function buildMessage({ from, to, subject, text }) {
 export function createMailer(cfg = { mode: 'none' }, { fetch = globalThis.fetch, logger = console } = {}) {
   async function send({ to, subject, text }) {
     try {
+      if (cfg.mode === 'smtp') {
+        const msg = buildMessage({ from: cfg.from, to, subject, text });
+        const envFrom = addressOf(cfg.from);
+        if (!ADDRESS.test(envFrom)) throw new Error('RK_MAIL_FROM needs an email address');
+        return await smtpSend(cfg, { from: envFrom, to }, msg);
+      }
       if (cfg.mode === 'resend') {
         buildMessage({ from: cfg.from, to, subject, text }); // same header checks
         const res = await fetch('https://api.resend.com/emails', {

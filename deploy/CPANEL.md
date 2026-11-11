@@ -64,7 +64,18 @@ To email invites and password resets, add this line to `recoverkit/.env` (use an
 RK_MAIL_FROM=RecoverKit <no-reply@yourvtusite.com>
 ```
 
-Without it, the Businesses page shows each link for you to send by WhatsApp.
+That uses your hosting's sendmail. For better delivery, use an SMTP service such as **Brevo** (free for 300 emails a day). Add these lines too, with the SMTP login and SMTP key from Brevo → **SMTP & API**, and make sure the RK_MAIL_FROM address is a verified sender in Brevo:
+
+```
+RK_SMTP_HOST=smtp-relay.brevo.com
+RK_SMTP_PORT=587
+RK_SMTP_USER=your-login@smtp-brevo.com
+RK_SMTP_PASS=your-brevo-smtp-key
+```
+
+Restart, then click **Send a test email** on the Businesses page.
+
+Without RK_MAIL_FROM, the Businesses page shows each link for you to send by WhatsApp.
 
 ## Keep it safe
 

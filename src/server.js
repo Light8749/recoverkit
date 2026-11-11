@@ -100,6 +100,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('GET', '/admin/businesses/:id', dash.adminBusinessPage)
     .add('POST', '/admin/businesses/:id/users', dash.addUserAction)
     .add('POST', '/admin/users/:id/link', dash.userLinkAction)
+    .add('POST', '/admin/mail-test', dash.mailTestAction)
     .add('GET', '/dashboard', dash.overview)
     .add('GET', '/dashboard/leads', dash.leadsPage)
     .add('GET', '/dashboard/messages', dash.messagesPage)

@@ -132,6 +132,12 @@ test('admin: only admins, add a business with an invite, invite sets the first p
   assert.equal((await get('/admin', bola)).status, 403);
   assert.ok(!dash.includes('href="/admin"'), 'no admin link for non-admins');
 
+  // The test email goes to the admin who clicked it.
+  mails.length = 0;
+  assert.match(msg(await post('/admin/mail-test', { _csrf: csrf }, s)), /ok=Sent to admin@padi\.ng/);
+  assert.equal(mails[0].to, 'admin@padi.ng');
+  assert.equal((await post('/admin/mail-test', { _csrf: 'x' }, bola)).status, 403);
+
   // Add a colleague, and make a reset link for an existing login.
   mails.length = 0;
   const added = await post(`/admin/businesses/${p.id}/users`, { _csrf: csrf, email: 'staff@boladata.ng' }, s);

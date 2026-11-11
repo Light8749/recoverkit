@@ -228,7 +228,8 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 | `RK_PUBLIC_URL` | `http://localhost:8787` | Must be `https://` in production. |
 | `RK_TRUST_PROXY` | off | Set `1` behind a TLS proxy so client IPs and https are detected. |
 | `RK_MAIL_FROM` | none | Sender for invites and password resets, e.g. `RecoverKit <no-reply@yourdomain.com>`. Without it, links are shown on the Admin page for you to send. |
-| `RK_RESEND_API_KEY` | none | Send those emails through Resend. Otherwise `sendmail` is used. |
+| `RK_SMTP_HOST` | none | Send those emails through SMTP, e.g. Brevo `smtp-relay.brevo.com`, with `RK_SMTP_PORT` (587; 465 for TLS), `RK_SMTP_USER` and `RK_SMTP_PASS`. TLS is required. |
+| `RK_RESEND_API_KEY` | none | Send them through Resend instead. With neither, `sendmail` is used. |
 | `RK_SENDMAIL` | `/usr/sbin/sendmail` | Path to sendmail (cPanel hosting has it). |
 | `RK_DB_PATH` | `./recoverkit.db` | SQLite file. |
 | `RK_AI_PROVIDER` | — | Server-default AI: `anthropic`, `openai`, `gemini`, `openai-compatible` or `none`. |
