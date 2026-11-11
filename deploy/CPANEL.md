@@ -85,6 +85,12 @@ If the test then says the IP address isn't recognised, allow your server's IP in
 
 Without RK_MAIL_FROM, the Businesses page shows each link for you to send by WhatsApp.
 
+To let businesses create their own account at `https://recover.yourvtusite.com/signup`, add this line too and Restart (email must be set up):
+
+```
+RK_SIGNUP=open
+```
+
 ## Keep it safe
 
 - **Back up** `recoverkit/.env` and `recoverkit/recoverkit.db` regularly (cPanel → **Backup**, or download them).

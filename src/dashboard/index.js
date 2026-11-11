@@ -78,6 +78,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
         ${group('', [field('email', 'Email', '', { type: 'email', max: 254, required: true, autocomplete: 'username', placeholder: 'you@yourbusiness.ng' }), field('password', 'Password', '', { type: 'password', max: 200, required: true, autocomplete: 'current-password', placeholder: 'Required' })])}
         <button class="btn prominent wide">Sign in</button></form>
       <p class="subtitle"><a href="/forgot">Forgot your password?</a></p>
+      ${config.signup === 'open' && mailer.enabled ? '<p class="subtitle">New to RecoverKit? <a href="/signup">Create an account</a></p>' : ''}
       <p class="subtitle">Connecting an app for a business? <a href="/docs">Developer docs</a></p></div>`,
     }));
   }

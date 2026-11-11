@@ -90,6 +90,8 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('GET', '/login', dash.loginPage)
     .add('POST', '/login', dash.login)
     .add('POST', '/logout', dash.logout)
+    .add('GET', '/signup', dash.signupPage)
+    .add('POST', '/signup', dash.signup)
     .add('GET', '/forgot', dash.forgotPage)
     .add('POST', '/forgot', dash.forgot)
     .add('GET', '/reset/:token', dash.resetPage)
@@ -162,7 +164,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
       if (err instanceof HttpError) {
         if (err.status === 303 && err.location) return redirect(res, err.location);
         const body = { error: err.expose ? err.message : 'error' };
-        if (/^\/(dashboard|admin|reset)(\/|$)/.test(url.pathname) || ['/logout', '/login', '/forgot'].includes(url.pathname)) {
+        if (/^\/(dashboard|admin|reset)(\/|$)/.test(url.pathname) || ['/logout', '/login', '/forgot', '/signup'].includes(url.pathname)) {
           return sendHtml(res, err.status, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${assets.css}"><main class="content"><div class="banner err" role="alert"><span>${esc(err.message)}</span></div><a class="btn tinted" href="/dashboard">Back to dashboard</a></main>`);
         }
         return send(res, err.status, body);
@@ -182,6 +184,11 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     db.run('DELETE FROM events WHERE ts < ?', cut);
     db.run('DELETE FROM webhook_seen WHERE seen_at < ?', cut);
     db.run('DELETE FROM sessions WHERE expires_at < ?', Date.now());
+    // Self-service sign-ups that never confirmed their email: removed once the 7-day link has expired.
+    db.run(`DELETE FROM projects WHERE source = 'signup' AND created_at < ?
+      AND NOT EXISTS (SELECT 1 FROM users u WHERE u.project_id = projects.id AND u.password_hash != '')
+      AND NOT EXISTS (SELECT 1 FROM password_tokens t JOIN users u ON u.id = t.user_id WHERE u.project_id = projects.id AND t.expires_at > ?)`,
+    Date.now() - 8 * 864e5, Date.now());
   }
   purgeOld();
   const purgeTimer = setInterval(purgeOld, 6 * 36e5);
@@ -193,7 +200,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     return new Promise((resolve) => server.close(() => { db.close(); resolve(); }));
   }
 
-  return { server, db, keys, accounts, projects, people, engine, outreach, limiter, close };
+  return { server, db, keys, accounts, projects, purgeOld, people, engine, outreach, limiter, close };
 }
 
 // Run directly: `node src/server.js`

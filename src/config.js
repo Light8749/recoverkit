@@ -33,6 +33,8 @@ export function readConfig(env = process.env) {
     ai: aiFromEnv(env),
     // System email for password resets and invites (see src/mailer.js).
     mail: mailFromEnv(env),
+    // RK_SIGNUP=open lets businesses create their own account at /signup (needs email set up). Default: invite-only.
+    signup: env.RK_SIGNUP === 'open' ? 'open' : 'off',
     // Lets a business point the AI at a private address (e.g. Ollama on this machine). Off by default (SSRF).
     allowPrivateAiUrls: env.RK_ALLOW_PRIVATE_AI_URLS === '1',
     attributionDays: Number(env.RK_ATTRIBUTION_DAYS || 7),

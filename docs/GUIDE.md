@@ -27,6 +27,8 @@ Make your own login the server admin once: `npm run cli -- make-admin you@yourbu
 - **Add a business:** name, wallet deposits or sales, and the owner's email. The owner gets a link (valid 7 days) to choose their password. With `RK_MAIL_FROM` set it's emailed; it's always shown to you as well, to send by WhatsApp.
 - **A business's page:** whether their website, gateways and connector are connected, recovered revenue, their logins, **Add a login** for a colleague, and **Reset link** / **New invite link** for anyone locked out.
 
+**Self-service sign-up:** with `RK_SIGNUP=open`, the sign-in page links to `/signup`. A business enters its name, deposits or sales, and an email; RecoverKit emails a link (valid 7 days) to confirm the address and choose a password. The answer is the same whether or not the email already has a login, bots that fill a hidden field are ignored, sign-ups are limited to 5 an hour per IP address and 100 an hour in all, and accounts never confirmed are deleted once their link expires. Sign-ups are never admins.
+
 Everyone can change their password under **Settings → Password** (other devices are signed out), and **Forgot your password?** on the sign-in page emails a one-hour link. Links are single-use and only their hashes are stored; a new link cancels the previous one. Without email set up, `npm run cli -- reset-link <email>` prints one.
 
 ## Onboarding a business's developer
@@ -227,6 +229,7 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 | `RK_MASTER_KEY` | — (required) | 32+ random bytes, base64. Derives the identity pepper, encryption key and token-signing key. |
 | `RK_PUBLIC_URL` | `http://localhost:8787` | Must be `https://` in production. |
 | `RK_TRUST_PROXY` | off | Set `1` behind a TLS proxy so client IPs and https are detected. |
+| `RK_SIGNUP` | invite-only | `open` lets businesses create their own account at `/signup` (needs email set up). |
 | `RK_MAIL_FROM` | none | Sender for invites and password resets, e.g. `RecoverKit <no-reply@yourdomain.com>`. Without it, links are shown on the Admin page for you to send. |
 | `RK_BREVO_API_KEY` | none | Send those emails through Brevo's HTTPS API. Use this on shared hosting that blocks SMTP ports (an `ECONNREFUSED …:587` error). |
 | `RK_SMTP_HOST` | none | Send those emails through SMTP, e.g. Brevo `smtp-relay.brevo.com`, with `RK_SMTP_PORT` (587; 465 for TLS), `RK_SMTP_USER` and `RK_SMTP_PASS`. TLS is required. |

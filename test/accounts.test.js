@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { createApp } from '../src/server.js';
 import { buildMessage, createMailer } from '../src/mailer.js';
 
-let app, base, dir, owner, other;
+let app, base, dir, owner, other, cfg;
 const mails = [];
 const mailer = { enabled: true, mode: 'test', send: async (m) => { mails.push(m); return { ok: true }; } };
 const PW = 'owner-password-long-1';
@@ -27,6 +27,7 @@ const msg = (r) => decodeURIComponent(r.headers.get('location') || '');
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'rk-acct-'));
   const config = { masterKey: randomBytes(32), port: 0, host: '127.0.0.1', dbPath: join(dir, 't.db'), publicUrl: 'http://127.0.0.1', trustProxy: false, ai: { provider: 'none' }, attributionDays: 7, feePercent: 10, minDaysBetweenMessages: 7 };
+  cfg = config;
   app = await createApp({ config, mailer, logger: { log() {}, warn() {}, error() {} } });
   await new Promise((r) => app.server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${app.server.address().port}`;
@@ -176,4 +177,69 @@ test('mailer refuses header injection', () => {
   const m = buildMessage({ from: 'R <r@x.ng>', to: 'a@b.ng', subject: 'Hi', text: 'line1\nline2' });
   assert.match(m, /^From: R <r@x\.ng>\r\nTo: a@b\.ng\r\nSubject: Hi\r\n/);
   assert.match(m, /line1\r\nline2/);
+});
+
+test('sign-up: closed by default, open with RK_SIGNUP=open, confirm by email, then sign in', async () => {
+  assert.equal((await get('/signup')).status, 404, 'invite-only by default');
+  assert.ok(!(await (await get('/login')).text()).includes('/signup'));
+  cfg.signup = 'open';
+  assert.match(await (await get('/login')).text(), /Create an account/);
+  assert.equal((await get('/signup')).status, 200);
+
+  mails.length = 0;
+  const r = await post('/signup', { name: 'Tunde Airtime', mode: 'deposits', email: 'Tunde@Airtime.ng' });
+  assert.match(msg(r), /ok=Check your email/);
+  assert.ok(!msg(r).includes('@'), 'no email in the URL');
+  const p = app.db.get("SELECT * FROM projects WHERE name = 'Tunde Airtime'");
+  assert.equal(p.source, 'signup');
+  assert.equal(p.gateway_mode, 'deposits');
+  assert.equal(app.db.get('SELECT COUNT(*) n FROM api_keys WHERE project_id = ?', p.id).n, 0);
+  assert.equal(mails[0].to, 'tunde@airtime.ng');
+  assert.equal((await login('tunde@airtime.ng', '')).cookie, null, 'no login before confirming');
+  const token = linkIn(mails[0].text);
+  await post(`/reset/${token}`, { password: 'tunde-password-long-1', confirm: 'tunde-password-long-1' });
+  const s = (await login('tunde@airtime.ng', 'tunde-password-long-1')).cookie;
+  assert.match(await (await get('/dashboard', s)).text(), /Tunde Airtime/);
+  assert.equal((await get('/admin', s)).status, 403, 'sign-ups are never admins');
+
+  // Same answer for an email that already has a login; it gets a "you already have an account" note instead.
+  mails.length = 0;
+  const again = await post('/signup', { name: 'Copycat', mode: 'sales', email: 'tunde@airtime.ng' });
+  assert.equal(msg(again), msg(r));
+  assert.equal(app.db.get("SELECT COUNT(*) n FROM projects WHERE name = 'Copycat'").n, 0);
+  assert.match(mails[0].subject, /already have/);
+
+  // Bots that fill the hidden field get the same answer and create nothing.
+  mails.length = 0;
+  assert.equal(msg(await post('/signup', { name: 'Bot', mode: 'sales', email: 'bot@spam.ng', website: 'http://spam' })), msg(r));
+  assert.equal(app.db.get("SELECT COUNT(*) n FROM projects WHERE name = 'Bot'").n, 0);
+  assert.equal(mails.length, 0);
+
+  // Bad input, cross-site posts.
+  assert.match(msg(await post('/signup', { name: '', mode: 'sales', email: 'x@y.ng' })), /business name/);
+  assert.match(msg(await post('/signup', { name: 'X', mode: 'nope', email: 'x2@y.ng' })), /kind of payments/);
+  const evil = await fetch(base + '/signup', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: 'https://evil.example' }, body: 'name=a&mode=sales&email=a@b.ng' });
+  assert.equal(evil.status, 403);
+
+  // Sign-ups that never confirm are removed once their link has expired; confirmed ones stay.
+  await post('/signup', { name: 'Ghost Shop', mode: 'sales', email: 'ghost@shop.ng' });
+  const ghost = app.db.get("SELECT id FROM projects WHERE name = 'Ghost Shop'");
+  app.db.run('UPDATE projects SET created_at = ? WHERE id IN (?, ?)', Date.now() - 9 * 864e5, ghost.id, p.id);
+  app.purgeOld();
+  assert.ok(app.db.get('SELECT id FROM projects WHERE id = ?', ghost.id), 'kept while its link still works');
+  app.db.run('UPDATE password_tokens SET expires_at = ? WHERE user_id IN (SELECT id FROM users WHERE project_id = ?)', Date.now() - 1, ghost.id);
+  app.purgeOld();
+  assert.equal(app.db.get('SELECT id FROM projects WHERE id = ?', ghost.id), undefined, 'unconfirmed sign-up removed');
+  assert.equal(app.db.get('SELECT COUNT(*) n FROM users WHERE email = ?', 'ghost@shop.ng').n, 0);
+  assert.ok(app.db.get('SELECT id FROM projects WHERE id = ?', p.id), 'confirmed account kept');
+  cfg.signup = 'off';
+});
+
+test('sign-up is rate limited per IP', async () => {
+  cfg.signup = 'open';
+  app.limiter.reset('signup-ip:127.0.0.1');
+  const codes = [];
+  for (let i = 0; i < 7; i++) codes.push(msg(await post('/signup', { name: `Flood ${i}`, mode: 'sales', email: `flood${i}@x.ng` })).includes('Too many') ? 'limited' : 'ok');
+  assert.deepEqual(codes, ['ok', 'ok', 'ok', 'ok', 'ok', 'limited', 'limited']);
+  cfg.signup = 'off';
 });

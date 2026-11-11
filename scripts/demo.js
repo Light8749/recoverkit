@@ -15,7 +15,10 @@ const config = {
   masterKey: randomBytes(32), port, host: '127.0.0.1', dbPath, publicUrl: `http://localhost:${port}`, trustProxy: false,
   ai: { provider: 'none' }, allowPrivateAiUrls: false, attributionDays: 7, feePercent: 10, minDaysBetweenMessages: 7, retentionDays: 395,
 };
-const app = await createApp({ config });
+// Demo: sign-up is open and emails are printed here instead of being sent.
+config.signup = 'open';
+const mailer = { enabled: true, mode: 'demo (printed in this terminal)', send: async (m) => { console.log(`\n--- email to ${m.to}: ${m.subject}\n${m.text}`); return { ok: true }; } };
+const app = await createApp({ config, mailer });
 const { projects, people, engine } = app;
 const p = projects.create({ name: 'Ada Data & Airtime', gatewayMode: 'deposits' });
 projects.createUser(p.id, 'demo@recoverkit.test', 'demo-password-123');

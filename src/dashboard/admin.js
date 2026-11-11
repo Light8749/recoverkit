@@ -26,6 +26,55 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
   // A page anyone can open (signed out): narrow, with Kobo on top.
   const authPage = (title, subtitle, inner) => page({ title, subtitle, body: `<div class="auth"><div class="auth-hero">${kobo({ mode: 'mark', size: 96, title: 'Kobo' })}</div>${inner}</div>` });
 
+  // ================= sign up (RK_SIGNUP=open) =================
+  const signupOpen = () => config.signup === 'open' && mailer.enabled;
+
+  function signupPage(_req, res, _p, url) {
+    if (!signupOpen()) return sendHtml(res, 404, authPage('Sign-up is closed', 'This RecoverKit server is invite-only. Ask whoever runs it to add your business.', '<a class="btn tinted wide" href="/login">Sign in</a>'));
+    sendHtml(res, 200, authPage('Create your RecoverKit account', 'Find the customers who signed up and never bought, and win them back.', `${banner(url.searchParams)}
+      <form method="post" action="/signup" autocomplete="off">
+        ${group('', [
+          field('name', 'Business name', '', { max: 80, required: true, placeholder: 'Ada VTU' }),
+          select('mode', 'You take', [['deposits', 'Wallet deposits (VTU, betting, fintech)'], ['sales', 'Sales (stores, subscriptions)']], 'deposits'),
+          field('email', 'Your email', '', { type: 'email', max: 254, required: true, autocomplete: 'email', placeholder: 'you@yourbusiness.ng' }),
+        ], 'We\'ll email you a link to confirm your address and choose a password.')}
+        <label class="sr-only" hidden>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label>
+        <button class="btn prominent wide">Create account</button></form>
+      <p class="subtitle">Already have an account? <a href="/login">Sign in</a></p>`));
+  }
+
+  async function signup(req, res) {
+    if (!signupOpen()) throw new HttpError(404, 'Sign-up is closed on this server.');
+    if (!sameOrigin(req)) throw new HttpError(403, 'cross-origin request blocked');
+    const form = parseForm(await readBody(req, 4096));
+    const ip = clientIp(req, config.trustProxy);
+    const email = normalizeEmail(form.email);
+    // The same answer whether the email is new or already has a login (no account discovery).
+    const done = () => redirect(res, '/signup?ok=' + encodeURIComponent(`Check your email for a link to finish creating your account. It works for ${INVITE_DAYS} days. Check your spam folder too.`));
+    if (form.website) return done(); // a bot filled the hidden field
+    if (!email) return back(res, '/signup', null, 'Enter a valid email address.');
+    const name = String(form.name || '').trim();
+    if (!name || name.length > 80) return back(res, '/signup', null, 'Enter your business name (up to 80 characters).');
+    if (!['sales', 'deposits'].includes(form.mode)) return back(res, '/signup', null, 'Choose what kind of payments you take.');
+    if (!limiter.hit(`signup-ip:${ip}`, 5, 60 * 60e3) || !limiter.hit('signup-all', 100, 60 * 60e3)) {
+      return back(res, '/signup', null, 'Too many sign-ups right now. Try again in an hour.');
+    }
+    if (!limiter.hit(`signup-email:${email}`, 3, 24 * 60 * 60e3)) return done();
+    const existing = accounts.byEmail(email);
+    if (existing) {
+      await mail(email, 'You already have a RecoverKit account', `Hello,\n\nSomeone tried to create a RecoverKit account with this email, but you already have one.\n\nSign in: ${config.publicUrl}/login\nForgot your password? ${config.publicUrl}/forgot\n\nIf this wasn't you, you can ignore this email.\n`);
+      return done();
+    }
+    let p, inv;
+    db.tx(() => {
+      p = projects.create({ name, gatewayMode: form.mode, withKey: false, source: 'signup' });
+      inv = accounts.invite(p.id, email);
+    });
+    projects.audit(p.id, email, 'signed_up', ip);
+    await mail(email, 'Finish creating your RecoverKit account', `Hello,\n\nThanks for signing up ${name} to RecoverKit. Confirm your email and choose your password here (the link works for ${INVITE_DAYS} days):\n${link(inv.token)}\n\nThen sign in at ${config.publicUrl}/login and open the Developers page to connect your app.\n\nIf you didn't sign up, ignore this email and the account will be removed.\n`);
+    done();
+  }
+
   // ================= forgot password =================
   function forgotPage(_req, res, _p, url) {
     sendHtml(res, 200, authPage('Reset your password', 'We\'ll email you a link to choose a new one.', `${banner(url.searchParams)}
@@ -125,10 +174,10 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
 
   function adminPage(req, res, _p, url, extra = '') {
     const ctx = requireAdmin(req);
-    const list = db.all('SELECT p.id, p.name, p.gateway_mode, p.created_at, (SELECT COUNT(*) FROM users u WHERE u.project_id = p.id) users, (SELECT COUNT(*) FROM persons x WHERE x.project_id = p.id) people FROM projects p ORDER BY p.created_at DESC LIMIT 500');
+    const list = db.all('SELECT p.id, p.name, p.gateway_mode, p.created_at, p.source, (SELECT COUNT(*) FROM users u WHERE u.project_id = p.id AND u.password_hash != \'\') active, (SELECT COUNT(*) FROM users u WHERE u.project_id = p.id) users, (SELECT COUNT(*) FROM persons x WHERE x.project_id = p.id) people FROM projects p ORDER BY p.created_at DESC LIMIT 500');
     const rows = list.map((p) => {
       const rev = engine.revenue(p.id);
-      return row(`${esc(p.name)}<small>${p.gateway_mode === 'deposits' ? 'Wallet deposits' : 'Sales'} · ${Number(p.users)} login${p.users === 1 ? '' : 's'} · ${Number(p.people)} people · added ${ago(p.created_at)}</small>`,
+      return row(`${esc(p.name)}<small>${p.source === 'signup' ? (p.active ? 'Signed up · ' : 'Signed up, not confirmed yet · ') : ''}${p.gateway_mode === 'deposits' ? 'Wallet deposits' : 'Sales'} · ${Number(p.users)} login${p.users === 1 ? '' : 's'} · ${Number(p.people)} people · added ${ago(p.created_at)}</small>`,
         `<span class="num">${money(rev.recoveredAmount, 'NGN')}</span>`, { href: `/admin/businesses/${p.id}` });
     });
     sendHtml(res, 200, page({
@@ -143,6 +192,8 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
         ], `The owner gets a link to choose their password (it works for ${INVITE_DAYS} days). Then they connect their app from their Developers page.`)}
         <button class="btn prominent">Add business</button></form>
       ${rows.length ? group(`${rows.length} business${rows.length === 1 ? '' : 'es'}`, rows, 'Recovered revenue is all time.') : empty('No businesses yet', 'Add the first one above.')}
+      ${group('Sign-up', [row('Businesses can sign up themselves', config.signup === 'open' ? (mailer.enabled ? pill('Open', 'green') : pill('Needs email', 'orange')) : pill('Invite-only'),
+        { sub: config.signup === 'open' ? `${esc(config.publicUrl)}/signup` : 'Add RK_SIGNUP=open to .env to let businesses create their own account' })])}
       ${group('Email', [row('Invites and password resets', mailer.enabled ? pill(`Sent by ${mailer.mode}`, 'green') : pill('Not set up', 'orange'),
         { sub: mailer.enabled ? 'Links are emailed, and shown here too' : 'Links are shown here for you to send. Set RK_MAIL_FROM in .env to email them.' })])}
       ${mailer.enabled ? `<form method="post" action="/admin/mail-test">${csrfField(ctx)}<button class="btn tinted">Send a test email to ${esc(ctx.user.email)}</button></form>` : ''}`,
@@ -228,7 +279,7 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
   }
 
   return {
-    mailTestAction, forgotPage, forgot, resetPage, reset, changePasswordAction, passwordGroup,
+    signupPage, signup, mailTestAction, forgotPage, forgot, resetPage, reset, changePasswordAction, passwordGroup,
     adminPage, addBusinessAction, adminBusinessPage, addUserAction, userLinkAction,
   };
 }

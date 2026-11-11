@@ -187,6 +187,8 @@ export function openDb(path) {
   db.exec(SCHEMA);
   // Migration: events.source_key makes connector re-syncs idempotent.
   if (!db.prepare('PRAGMA table_info(events)').all().some((c) => c.name === 'source_key')) db.exec('ALTER TABLE events ADD COLUMN source_key TEXT');
+  // Migration: projects.source ('signup' for self-service accounts, so unconfirmed ones can be cleaned up).
+  if (!db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'source')) db.exec("ALTER TABLE projects ADD COLUMN source TEXT NOT NULL DEFAULT ''");
   // Migration: users.is_admin marks whoever runs this RecoverKit server (Admin pages).
   if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'is_admin')) db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS events_source_key ON events(project_id, source_key) WHERE source_key IS NOT NULL');

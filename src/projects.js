@@ -9,13 +9,13 @@ const PUB_RE = /^rk_pub_[0-9a-f]{24}$/;
 const SEC_RE = /^rk_sec_(key_[0-9a-f]{24})_([A-Za-z0-9_-]{32,64})$/;
 
 export function createProjects(db, keys) {
-  function create({ name, gatewayMode = 'sales', currency = 'NGN', withKey = true }) {
+  function create({ name, gatewayMode = 'sales', currency = 'NGN', withKey = true, source = '' }) {
     if (typeof name !== 'string' || !name.trim() || name.length > 80) throw new Error('project name required (max 80 chars)');
     if (!['sales', 'deposits'].includes(gatewayMode)) throw new Error('gatewayMode must be sales or deposits');
     const id = randomId('prj_');
     const publicKey = 'rk_pub_' + randomBytes(12).toString('hex');
-    db.run('INSERT INTO projects (id, name, public_key, gateway_mode, currency, created_at) VALUES (?,?,?,?,?,?)',
-      id, name.trim(), publicKey, gatewayMode, currency, Date.now());
+    db.run('INSERT INTO projects (id, name, public_key, gateway_mode, currency, created_at, source) VALUES (?,?,?,?,?,?,?)',
+      id, name.trim(), publicKey, gatewayMode, currency, Date.now(), source);
     // From the admin page no key is made: the owner creates their own on the Developers page.
     return { id, publicKey, secretKey: withKey ? createSecretKey(id, 'default') : null };
   }
