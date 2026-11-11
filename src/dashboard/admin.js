@@ -38,7 +38,8 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
     const email = normalizeEmail(form.email) || '';
     const ip = clientIp(req, config.trustProxy);
     // Same answer whether or not the email exists, so this can't be used to find accounts.
-    const done = () => redirect(res, '/forgot?ok=' + encodeURIComponent(`If ${email || 'that email'} has a RecoverKit login, a reset link is on its way. It works for ${RESET_MINUTES} minutes. No email? Ask whoever set up your RecoverKit account.`));
+    // The email address is never put in the redirect URL (browser history, server logs).
+    const done = () => redirect(res, '/forgot?ok=' + encodeURIComponent(`If that email has a RecoverKit login, a reset link is on its way. It works for ${RESET_MINUTES} minutes. Check your spam folder too. No email? Ask whoever set up your RecoverKit account.`));
     if (!limiter.hit(`forgot-ip:${ip}`, 10, 15 * 60e3)) return redirect(res, '/forgot?err=' + encodeURIComponent('Too many requests. Try again in 15 minutes.'));
     if (!email || !limiter.hit(`forgot-email:${email}`, 3, 60 * 60e3)) return done();
     const u = accounts.byEmail(email);

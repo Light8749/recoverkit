@@ -44,7 +44,8 @@ test('forgot password: same answer for any email, one-time link, signs out every
   mails.length = 0;
   const unknown = await post('/forgot', { email: 'nobody@nowhere.ng' });
   const known = await post('/forgot', { email: 'Shop@Other.ng ' });
-  assert.equal(msg(unknown).replace('nobody@nowhere.ng', 'X'), msg(known).replace('shop@other.ng', 'X'), 'no account enumeration');
+  assert.equal(msg(unknown), msg(known), 'no account enumeration');
+  assert.ok(!msg(known).includes('@'), 'no email address in the URL');
   assert.equal(mails.length, 1);
   assert.equal(mails[0].to, other.email);
   const token = linkIn(mails[0].text);
