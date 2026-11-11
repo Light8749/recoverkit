@@ -19,6 +19,8 @@ const app = await createApp({ config });
 const { projects, people, engine } = app;
 const p = projects.create({ name: 'Ada Data & Airtime', gatewayMode: 'deposits' });
 projects.createUser(p.id, 'demo@recoverkit.test', 'demo-password-123');
+app.accounts.setAdmin('demo@recoverkit.test'); // so the demo shows the Admin pages too
+projects.create({ name: 'Bola Stores', gatewayMode: 'sales', withKey: false });
 projects.update(p.id, { voiceProfile: 'Friendly and quick. We talk like Lagos friends, small Pidgin is fine.', paymentLink: 'https://adadata.ng/buy' });
 projects.setChannel(p.id, 'console', { enabled: true });
 projects.addGateway(p.id, { provider: 'paystack', secret: 'sk_test_demo_secret_key' });

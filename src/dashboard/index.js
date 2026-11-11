@@ -8,6 +8,7 @@ import { AI_PROVIDERS } from '../ai.js';
 import { normalizeEmail } from '../../sdk/core/identity.js';
 import { kobo } from './mascot.js';
 import { developerGuide, apiReference } from './devguide.js';
+import { createAccountPages } from './admin.js';
 import { esc, money, ago, icon, csrfField, banner, page, group, row, switchRow, field, select, segmented, bar, pill, empty } from './ui.js';
 
 export { esc };
@@ -21,7 +22,7 @@ const STAGE_LABEL = {
 };
 const FIELD_LABEL = { ref: 'Payment reference', amount: 'Amount', currency: 'Currency', email: 'Customer email', phone: 'Customer phone', name: 'Customer name', time: 'Paid at', eventId: 'Unique event ID', kind: 'Sale or deposit tag' };
 
-export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi }) {
+export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger }) {
   const secureCookie = config.publicUrl.startsWith('https://');
   const cookie = (v, maxAge) => `rk_session=${v}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
 
@@ -30,7 +31,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     if (!token || token.length > 100) return null;
     const s = db.get('SELECT * FROM sessions WHERE token_hash = ?', sha256Hex(token));
     if (!s || s.expires_at < Date.now()) return null;
-    const user = db.get('SELECT id, email, project_id FROM users WHERE id = ?', s.user_id);
+    const user = db.get('SELECT id, email, project_id, is_admin FROM users WHERE id = ?', s.user_id);
     if (!user) return null;
     const project = projects.byId(user.project_id);
     const badge = db.get("SELECT COUNT(*) n FROM messages WHERE project_id = ? AND status = 'draft'", project.id).n;
@@ -64,6 +65,8 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
 
   const back = (res, path, ok, err) => redirect(res, `${path}${path.includes('?') ? '&' : '?'}${ok ? 'ok=' + encodeURIComponent(ok) : 'err=' + encodeURIComponent(err)}`);
 
+  const acct = createAccountPages({ db, config, projects, engine, limiter, accounts, mailer, logger, requireSession, postCtx, sameOrigin, back });
+
   // ================= auth =================
   function loginPage(req, res, _p, url) {
     if (session(req)) return redirect(res, '/dashboard');
@@ -74,6 +77,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
       <form method="post" action="/login">
         ${group('', [field('email', 'Email', '', { type: 'email', max: 254, required: true, autocomplete: 'username', placeholder: 'you@yourbusiness.ng' }), field('password', 'Password', '', { type: 'password', max: 200, required: true, autocomplete: 'current-password', placeholder: 'Required' })])}
         <button class="btn prominent wide">Sign in</button></form>
+      <p class="subtitle"><a href="/forgot">Forgot your password?</a></p>
       <p class="subtitle">Connecting an app for a business? <a href="/docs">Developer docs</a></p></div>`,
     }));
   }
@@ -444,7 +448,8 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
         ...keys.map((k) => `<div class="row"><span class="row-label"><code>${esc(k.id)}</code><small>${esc(k.label)} · created ${ago(k.created_at)}</small></span><span class="row-value">${k.revoked_at ? pill('Revoked') : `<form method="post" action="/dashboard/keys/${esc(k.id)}/revoke">${csrfField(ctx)}<button class="btn plain destructive small">Revoke</button></form>`}</span></div>`),
       ], 'For your server only. Never put a secret key in a website or app.')}
       <form method="post" action="/dashboard/keys">${csrfField(ctx)}<button class="btn tinted">Create a secret key</button></form>
-      <div class="mobile-only"><form method="post" action="/logout">${csrfField(ctx)}<button class="btn plain destructive wide">Log out ${esc(ctx.user.email)}</button></form></div>`,
+      ${acct.passwordGroup(ctx)}
+      <div class="mobile-only">${ctx.user.is_admin ? group('', [row('Businesses (admin)', '', { href: '/admin' })]) : ''}<form method="post" action="/logout">${csrfField(ctx)}<button class="btn plain destructive wide">Log out ${esc(ctx.user.email)}</button></form></div>`,
     }));
   }
 
@@ -556,6 +561,6 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
     aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction,
     settingsPage, settingsAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, sendAction,
-    developersPage, developerKeyAction, sharedGuidePage, docsPage,
+    developersPage, developerKeyAction, sharedGuidePage, docsPage, ...acct,
   };
 }

@@ -20,6 +20,15 @@ Want to look around first? `npm run demo` starts a dashboard with sample data at
 
 Each business picks its own AI model under **Dashboard → AI model**. There's also a server-wide default (see *AI models* below). With no model set, built-in templates are used.
 
+## Adding businesses and logins
+
+Make your own login the server admin once: `npm run cli -- make-admin you@yourbusiness.ng`. Sign in again and **Businesses** appears in the sidebar:
+
+- **Add a business:** name, wallet deposits or sales, and the owner's email. The owner gets a link (valid 7 days) to choose their password. With `RK_MAIL_FROM` set it's emailed; it's always shown to you as well, to send by WhatsApp.
+- **A business's page:** whether their website, gateways and connector are connected, recovered revenue, their logins, **Add a login** for a colleague, and **Reset link** / **New invite link** for anyone locked out.
+
+Everyone can change their password under **Settings → Password** (other devices are signed out), and **Forgot your password?** on the sign-in page emails a one-hour link. Links are single-use and only their hashes are stored; a new link cancels the previous one. Without email set up, `npm run cli -- reset-link <email>` prints one.
+
 ## Onboarding a business's developer
 
 The developer never needs this repository or the server code. In the dashboard, the business owner opens **Developers**, which shows every step with their own keys and server address filled in:
@@ -218,6 +227,9 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 | `RK_MASTER_KEY` | — (required) | 32+ random bytes, base64. Derives the identity pepper, encryption key and token-signing key. |
 | `RK_PUBLIC_URL` | `http://localhost:8787` | Must be `https://` in production. |
 | `RK_TRUST_PROXY` | off | Set `1` behind a TLS proxy so client IPs and https are detected. |
+| `RK_MAIL_FROM` | none | Sender for invites and password resets, e.g. `RecoverKit <no-reply@yourdomain.com>`. Without it, links are shown on the Admin page for you to send. |
+| `RK_RESEND_API_KEY` | none | Send those emails through Resend. Otherwise `sendmail` is used. |
+| `RK_SENDMAIL` | `/usr/sbin/sendmail` | Path to sendmail (cPanel hosting has it). |
 | `RK_DB_PATH` | `./recoverkit.db` | SQLite file. |
 | `RK_AI_PROVIDER` | — | Server-default AI: `anthropic`, `openai`, `gemini`, `openai-compatible` or `none`. |
 | `RK_AI_MODEL` / `RK_AI_API_KEY` / `RK_AI_BASE_URL` | — | Model, key and (for openai-compatible) base URL for the default. |

@@ -2,6 +2,8 @@
 //   npm run cli -- init [--public-url=https://…]         write .env with a fresh master key
 //   npm run cli -- create-project "My VTU" deposits      create a project (sales|deposits)
 //   npm run cli -- create-user <projectId> <email>       create a dashboard login (prompts for password)
+//   npm run cli -- make-admin <email>                    let this login open the Admin pages (add businesses)
+//   npm run cli -- reset-link <email>                    print a one-hour password reset link
 //   npm run cli -- send <projectId>                      send approved messages (for cron)
 import { writeFileSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -30,6 +32,7 @@ if (cmd === 'init') {
     `RK_PUBLIC_URL=${pub || 'http://localhost:8787'}`,
     ...(pub.startsWith('https://') ? ['RK_TRUST_PROXY=1'] : []),
     '# ANTHROPIC_API_KEY=...',
+    '# RK_MAIL_FROM=RecoverKit <no-reply@yourdomain.com>   (emails invites and password resets)',
   ];
   writeFileSync('.env', lines.join('\n') + '\n', { mode: 0o600 });
   console.log('Wrote .env (permissions 600). Back up RK_MASTER_KEY: without it, stored contacts and secrets cannot be decrypted.');
@@ -50,10 +53,19 @@ try {
     const pw = process.env.RK_NEW_PASSWORD || await askHidden('Password (12+ characters): ');
     app.projects.createUser(projectId, email, pw);
     console.log('User created.');
+  } else if (cmd === 'make-admin') {
+    app.accounts.setAdmin(args[0]);
+    console.log(`${args[0]} is now an admin. Sign in again to see Businesses in the sidebar.`);
+  } else if (cmd === 'reset-link') {
+    const u = app.accounts.byEmail(args[0]);
+    if (!u) throw new Error('no user with that email');
+    const token = app.accounts.issue(u.id, u.password_hash ? 'reset' : 'invite');
+    app.projects.audit(u.project_id, 'cli', 'reset_link_created', u.email);
+    console.log(`${config.publicUrl}/reset/${token}\n(Works once, for ${u.password_hash ? '1 hour' : '7 days'}.)`);
   } else if (cmd === 'send') {
     console.log(await app.outreach.sendApproved(args[0]));
   } else {
-    console.log('commands: init | create-project <name> [sales|deposits] | create-user <projectId> <email> | send <projectId>');
+    console.log('commands: init | create-project <name> [sales|deposits] | create-user <projectId> <email> | make-admin <email> | reset-link <email> | send <projectId>');
   }
 } catch (e) {
   console.error('Error:', e.message);

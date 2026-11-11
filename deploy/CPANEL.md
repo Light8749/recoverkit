@@ -48,6 +48,24 @@ node src/cli.js create-user prj_XXXX you@youremail.com
 
 Back in **Setup Node.js App**, click **Restart**. Open `https://recover.yourvtusite.com/login` and sign in.
 
+## 6. Become the admin, so you can add businesses
+
+In the cPanel Terminal (after the `source … && cd …` command from step 4):
+
+```bash
+node src/cli.js make-admin you@youremail.com
+```
+
+Sign in again: **Businesses** is now in the sidebar. Add each business there; you don't need the terminal for that any more.
+
+To email invites and password resets, add this line to `recoverkit/.env` (use an address on your own domain), then **Restart**:
+
+```
+RK_MAIL_FROM=RecoverKit <no-reply@yourvtusite.com>
+```
+
+Without it, the Businesses page shows each link for you to send by WhatsApp.
+
 ## Keep it safe
 
 - **Back up** `recoverkit/.env` and `recoverkit/recoverkit.db` regularly (cPanel → **Backup**, or download them).

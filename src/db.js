@@ -162,6 +162,16 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER NOT NULL
 );
 
+-- Single-use links: 'reset' (forgot password) and 'invite' (first password). Only hashes are stored.
+CREATE TABLE IF NOT EXISTS password_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id TEXT NOT NULL,
@@ -177,6 +187,8 @@ export function openDb(path) {
   db.exec(SCHEMA);
   // Migration: events.source_key makes connector re-syncs idempotent.
   if (!db.prepare('PRAGMA table_info(events)').all().some((c) => c.name === 'source_key')) db.exec('ALTER TABLE events ADD COLUMN source_key TEXT');
+  // Migration: users.is_admin marks whoever runs this RecoverKit server (Admin pages).
+  if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'is_admin')) db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS events_source_key ON events(project_id, source_key) WHERE source_key IS NOT NULL');
   const cache = new Map();
   let depth = 0;

@@ -21,10 +21,12 @@ import { createHash } from 'node:crypto';
 import { buildBrowserBundle } from '../scripts/build-browser.js';
 import { brandSvg } from '../scripts/build-brand.js';
 import { loadDownloads, PHP_FILES } from './downloads.js';
+import { createAccounts } from './accounts.js';
+import { createMailer } from './mailer.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-export async function createApp({ config, fetch = globalThis.fetch, anthropicFactory, resolver, logger = console } = {}) {
+export async function createApp({ config, fetch = globalThis.fetch, anthropicFactory, resolver, logger = console, mailer } = {}) {
   const keys = deriveKeys(config.masterKey);
   const db = openDb(config.dbPath);
   const limiter = new RateLimiter();
@@ -47,7 +49,9 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     resolveAi, logger, fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls,
   });
   const outreach = createOutreach({ db, keys, config, projects, people, engine, drafter, fetch, logger });
-  const deps = { db, config, keys, projects, people, engine, limiter, outreach, drafter, resolveAi };
+  const accounts = createAccounts(db);
+  mailer ||= createMailer(config.mail, { fetch, logger });
+  const deps = { db, config, keys, accounts, mailer, logger, projects, people, engine, limiter, outreach, drafter, resolveAi };
   const ingest = createIngest(deps);
   const webhooks = createWebhooks(deps);
   const connector = createConnectorApi({ ...deps, requireSecret: ingest.requireSecret, deps: { fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls } });
@@ -86,6 +90,16 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('GET', '/login', dash.loginPage)
     .add('POST', '/login', dash.login)
     .add('POST', '/logout', dash.logout)
+    .add('GET', '/forgot', dash.forgotPage)
+    .add('POST', '/forgot', dash.forgot)
+    .add('GET', '/reset/:token', dash.resetPage)
+    .add('POST', '/reset/:token', dash.reset)
+    .add('POST', '/dashboard/password', dash.changePasswordAction)
+    .add('GET', '/admin', dash.adminPage)
+    .add('POST', '/admin/businesses', dash.addBusinessAction)
+    .add('GET', '/admin/businesses/:id', dash.adminBusinessPage)
+    .add('POST', '/admin/businesses/:id/users', dash.addUserAction)
+    .add('POST', '/admin/users/:id/link', dash.userLinkAction)
     .add('GET', '/dashboard', dash.overview)
     .add('GET', '/dashboard/leads', dash.leadsPage)
     .add('GET', '/dashboard/messages', dash.messagesPage)
@@ -147,7 +161,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
       if (err instanceof HttpError) {
         if (err.status === 303 && err.location) return redirect(res, err.location);
         const body = { error: err.expose ? err.message : 'error' };
-        if (url.pathname.startsWith('/dashboard') || url.pathname === '/logout' || url.pathname === '/login') {
+        if (/^\/(dashboard|admin|reset)(\/|$)/.test(url.pathname) || ['/logout', '/login', '/forgot'].includes(url.pathname)) {
           return sendHtml(res, err.status, `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="${assets.css}"><main class="content"><div class="banner err" role="alert"><span>${esc(err.message)}</span></div><a class="btn tinted" href="/dashboard">Back to dashboard</a></main>`);
         }
         return send(res, err.status, body);
@@ -178,7 +192,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     return new Promise((resolve) => server.close(() => { db.close(); resolve(); }));
   }
 
-  return { server, db, keys, projects, people, engine, outreach, limiter, close };
+  return { server, db, keys, accounts, projects, people, engine, outreach, limiter, close };
 }
 
 // Run directly: `node src/server.js`
