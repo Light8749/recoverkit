@@ -62,7 +62,7 @@ const MSG = 'From: R <no-reply@padi.ng>\r\nTo: ada@shop.ng\r\nSubject: Hi\r\n\r\
 
 test('STARTTLS on 587-style ports: upgrades before logging in, dot-stuffs the body', async () => {
   const { server, got, port } = await fakeServer({ mode: 'starttls' });
-  const r = await smtpSend({ host: 'localhost', connectHost: '127.0.0.1', port, user: 'me@smtp-brevo.com', pass: 'smtp-key', ...trust }, { from: 'no-reply@padi.ng', to: 'ada@shop.ng' }, MSG);
+  const r = await smtpSend({ host: 'mail.test', connectHost: '127.0.0.1', port, user: 'me@smtp-brevo.com', pass: 'smtp-key', ...trust }, { from: 'no-reply@padi.ng', to: 'ada@shop.ng' }, MSG);
   server.close();
   assert.deepEqual(r, { ok: true });
   assert.equal(got.tls, true);
@@ -92,7 +92,7 @@ test('refuses to log in without encryption to a remote server, and reports bad c
   plain.server.close();
 
   const bad = await fakeServer({ mode: 'starttls', authOk: false });
-  await assert.rejects(smtpSend({ host: 'localhost', connectHost: '127.0.0.1', port: bad.port, user: 'u', pass: 'wrong', ...trust }, { from: 'a@b.ng', to: 'c@d.ng' }, MSG), /login/);
+  await assert.rejects(smtpSend({ host: 'mail.test', connectHost: '127.0.0.1', port: bad.port, user: 'u', pass: 'wrong', ...trust }, { from: 'a@b.ng', to: 'c@d.ng' }, MSG), /login/);
   bad.server.close();
 });
 
@@ -103,7 +103,7 @@ test('mailer: Brevo-style settings from env, and a full send through SMTP', asyn
   assert.equal(addressOf('RecoverKit <no-reply@padi.ng>'), 'no-reply@padi.ng');
 
   const { server, got, port } = await fakeServer({ mode: 'starttls' });
-  const m = createMailer({ mode: 'smtp', from: 'RecoverKit <no-reply@padi.ng>', host: 'localhost', connectHost: '127.0.0.1', port, user: 'u', pass: 'p', ...trust });
+  const m = createMailer({ mode: 'smtp', from: 'RecoverKit <no-reply@padi.ng>', host: 'mail.test', connectHost: '127.0.0.1', port, user: 'u', pass: 'p', ...trust });
   assert.deepEqual(await m.send({ to: 'ada@shop.ng', subject: 'Reset your RecoverKit password', text: 'Hello\nhttps://x/reset/abc' }), { ok: true });
   server.close();
   assert.match(got.data, /^From: RecoverKit <no-reply@padi\.ng>\r\nTo: ada@shop\.ng\r\nSubject: Reset your RecoverKit password\r\nDate: /);
@@ -125,4 +125,13 @@ test('mailer: Brevo HTTPS API (for hosts that block SMTP ports)', async () => {
   const bad = createMailer(cfg, { fetch: async () => new Response('{"message":"Sender not valid"}', { status: 400 }) });
   assert.deepEqual(await bad.send({ to: 'ada@shop.ng', subject: 's', text: 't' }), { ok: false, error: 'brevo 400: Sender not valid' });
   assert.equal((await m.send({ to: 'a@b.ng\r\nBcc: x@y.ng', subject: 's', text: 't' })).ok, false, 'header checks still apply');
+});
+
+test('localhost (cPanel\'s own mail server): logs in without STARTTLS, since nothing leaves the machine', async () => {
+  const { server, got, port } = await fakeServer({ mode: 'starttls' });
+  const r = await smtpSend({ host: 'localhost', connectHost: '127.0.0.1', port, user: 'no-reply@padi.ng', pass: 'mailbox-pw' }, { from: 'no-reply@padi.ng', to: 'ada@shop.ng' }, MSG);
+  server.close();
+  assert.deepEqual(r, { ok: true });
+  assert.equal(got.tls, false);
+  assert.equal(got.auth, '\0no-reply@padi.ng\0mailbox-pw');
 });

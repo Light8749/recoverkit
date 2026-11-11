@@ -58,7 +58,9 @@ export async function smtpSend(cfg, envelope, msg) {
     await expect([220], 'greeting');
     send('EHLO recoverkit');
     let ehlo = await expect([250], 'EHLO');
-    if (!implicit) {
+    // On this machine (cPanel's own mail server at localhost) the connection never leaves the server,
+    // and the certificate is never issued for "localhost", so STARTTLS is skipped there.
+    if (!implicit && !LOCAL.has(cfg.host)) {
       if (/STARTTLS/i.test(ehlo.text)) {
         send('STARTTLS');
         await expect([220], 'STARTTLS');
@@ -71,7 +73,7 @@ export async function smtpSend(cfg, envelope, msg) {
         r.attach(socket);
         send('EHLO recoverkit');
         ehlo = await expect([250], 'EHLO after STARTTLS');
-      } else if (!LOCAL.has(cfg.host)) {
+      } else {
         throw new Error('the SMTP server does not offer STARTTLS; use port 465 or 587');
       }
     }
