@@ -11,10 +11,12 @@ const ADMIN_RESET_HOURS = 24;
 export function createAccountPages({ db, config, projects, engine, limiter, accounts, mailer, logger = console, requireSession, postCtx, sameOrigin, back }) {
   const link = (token) => `${config.publicUrl}/reset/${token}`;
 
+  const hide = (e) => e.replace(/^(.).*@/, '$1***@');
   async function mail(to, subject, text) {
-    if (!mailer.enabled) return false;
+    if (!mailer.enabled) { logger.warn?.(`[mail] not sent to ${hide(to)}: email is not set up (RK_MAIL_FROM is missing from .env)`); return false; }
     const r = await mailer.send({ to, subject, text });
-    if (!r.ok) logger.warn?.(`[mail] to ${to.replace(/^(.).*@/, '$1***@')} failed: ${r.error}`);
+    if (r.ok) logger.warn?.(`[mail] sent "${subject}" to ${hide(to)} by ${mailer.mode}`);
+    else logger.warn?.(`[mail] to ${hide(to)} failed: ${r.error}`);
     return r.ok;
   }
 
@@ -43,6 +45,7 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
     if (!limiter.hit(`forgot-ip:${ip}`, 10, 15 * 60e3)) return redirect(res, '/forgot?err=' + encodeURIComponent('Too many requests. Try again in 15 minutes.'));
     if (!email || !limiter.hit(`forgot-email:${email}`, 3, 60 * 60e3)) return done();
     const u = accounts.byEmail(email);
+    if (!u) logger.warn?.(`[mail] password reset asked for ${hide(email)}: no login with that email, nothing sent`);
     if (u) {
       const token = accounts.issue(u.id, 'reset');
       projects.audit(u.project_id, u.email, 'password_reset_requested', ip);
