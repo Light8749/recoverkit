@@ -23,6 +23,7 @@ import { brandSvg } from '../scripts/build-brand.js';
 import { loadDownloads, PHP_FILES } from './downloads.js';
 import { createAccounts } from './accounts.js';
 import { createMailer } from './mailer.js';
+import { landingPage, robotsTxt, sitemapXml, llmsTxt } from './site.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -61,6 +62,10 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   assets.css = `/static/app.css?v=${createHash('sha256').update(css).digest('hex').slice(0, 10)}`;
   const sdkJs = buildBrowserBundle();
   const favicon = brandSvg('mark');
+  const ogPath = join(here, '../assets/brand/og.png');
+  const ogImage = existsSync(ogPath) ? readFileSync(ogPath) : null;
+  const signupLive = () => config.signup === 'open' && mailer.enabled;
+  const text = (body, type) => (_q, res) => send(res, 200, body(), { 'Content-Type': type, 'Cache-Control': 'public, max-age=3600' });
   const downloads = loadDownloads();
   // Downloads are plain text with an attachment header: a browser saves them, never runs them.
   const download = (name, body, type = 'text/plain; charset=utf-8') => (_q, res) => send(res, 200, body, {
@@ -86,7 +91,11 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/v1/connector/suggest', connector.suggest)
     .add('POST', '/v1/connector/sync', connector.sync)
     .add('POST', '/v1/webhooks/:gatewayId', webhooks.receive)
-    .add('GET', '/', (_q, res) => redirect(res, '/dashboard'))
+    .add('GET', '/', (req, res) => sendHtml(res, 200, landingPage(config, { signedIn: dash.isSignedIn(req), signupOpen: signupLive() }), { 'Cache-Control': 'no-cache' }))
+    .add('GET', '/robots.txt', text(() => robotsTxt(config), 'text/plain; charset=utf-8'))
+    .add('GET', '/sitemap.xml', text(() => sitemapXml(config, signupLive()), 'application/xml; charset=utf-8'))
+    .add('GET', '/llms.txt', text(() => llmsTxt(config, signupLive()), 'text/plain; charset=utf-8'))
+    .add('GET', '/static/og.png', (_q, res) => (ogImage ? send(res, 200, ogImage, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'Cross-Origin-Resource-Policy': 'cross-origin' }) : send(res, 404, { error: 'not found' })))
     .add('GET', '/login', dash.loginPage)
     .add('POST', '/login', dash.login)
     .add('POST', '/logout', dash.logout)
@@ -156,6 +165,8 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
       if (u) return await unsubscribe(req, res, u[1]);
       const g = GUIDE.exec(url.pathname);
       if (g) return req.method === 'GET' ? dash.sharedGuidePage(req, res, { token: g[1] }) : send(res, 405, { error: 'method not allowed' });
+      // Signed-in and one-time pages never belong in search results.
+      if (/^\/(dashboard|admin|reset|forgot|dev|u)(\/|$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
       const m = r.match(req.method, url.pathname);
       if (!m) return send(res, 404, { error: 'not found' });
       if (m.status) return send(res, m.status, { error: 'method not allowed' });

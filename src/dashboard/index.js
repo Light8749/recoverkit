@@ -562,6 +562,6 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
     aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction,
     settingsPage, settingsAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, sendAction,
-    developersPage, developerKeyAction, sharedGuidePage, docsPage, ...acct,
+    developersPage, developerKeyAction, sharedGuidePage, docsPage, ...acct, isSignedIn: (req) => Boolean(session(req)),
   };
 }
