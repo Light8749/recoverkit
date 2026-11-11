@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="../../actions/workflows/ci.yml"><img src="../../actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Light8749/recoverkit/actions/workflows/ci.yml"><img src="https://github.com/Light8749/recoverkit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/node-%E2%89%A522.13-339933" alt="Node 22.13+">
   <img src="https://img.shields.io/badge/PHP-%E2%89%A57.4-777BB4" alt="PHP 7.4+">
   <img src="https://img.shields.io/badge/license-all%20rights%20reserved-lightgrey" alt="License: all rights reserved">
@@ -64,7 +64,7 @@ Browser signals alone are never trusted as proof of purchase. Only signed webhoo
 Requires **Node.js 22.13+** (Node 24 recommended) and, for the PHP connector and its tests, **PHP 7.4+** with PDO.
 
 ```bash
-git clone <this repo> recoverkit && cd recoverkit
+git clone https://github.com/Light8749/recoverkit.git && cd recoverkit
 npm install
 npm run demo          # dashboard with sample data at http://localhost:8790
                       # sign in: demo@recoverkit.test / demo-password-123
