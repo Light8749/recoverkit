@@ -36,7 +36,8 @@
     <path d="M64 99 L66 106 M62 108 L66 106 L70 107"/>
   </g></g></g>
   <g class="kobo-coin"><circle cx="45" cy="78" r="8"/><text x="45" y="81.5" text-anchor="middle">₦</text></g>
-<style>/* ===================== KOBO START (mascot; copied into the standalone brand SVGs) =====================
+<style><![CDATA[
+/* ===================== KOBO START (mascot; copied into the standalone brand SVGs) =====================
    Disney's 12 principles: anticipation (crouch), arcs (boomerang flight), slow in/out,
    squash & stretch (landing), follow-through (tail lags the body), secondary action
    (wing flaps, head bob, blink), timing (6 s loop with a long rest so it never nags),
@@ -188,4 +189,5 @@
 @media (prefers-reduced-motion: reduce) {
   .kobo * { animation: none !important; }
 }
-/* ===================== KOBO END ===================== */</style></svg>
+/* ===================== KOBO END ===================== */
+]]></style></svg>

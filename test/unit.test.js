@@ -153,4 +153,10 @@ test('Kobo mascot: CSP-safe markup and self-contained brand files', async () => 
   assert.match(file, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   assert.match(file, /@keyframes kobo-flight/);
   assert.match(file, /prefers-reduced-motion/);
+  // Standalone SVGs must be well-formed XML or browsers show a broken image: no raw '&' outside CDATA.
+  for (const mode of ['hero', 'mark', 'still']) {
+    const f = brandSvg(mode);
+    assert.ok(!/&(?![a-z]+;|#\d+;)/.test(f.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '')), `${mode}: stray & outside CDATA`);
+    assert.match(f, /<style><!\[CDATA\[/);
+  }
 });

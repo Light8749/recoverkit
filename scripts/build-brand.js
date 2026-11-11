@@ -24,7 +24,8 @@ export function brandSvg(mode, { size = 512, background = false } = {}) {
     svg = svg.replace(/viewBox="[^"]+"/, 'viewBox="-6 -4 130 130"')
       .replace(/(<svg[^>]*>)/, '$1<rect x="-6" y="-4" width="130" height="130" rx="29" fill="#e9f0ff"/>');
   }
-  return svg.replace('</svg>', `<style>${koboCss()}</style></svg>`);
+  // CDATA keeps the CSS (comments contain "&") from making the file invalid XML, which browsers refuse to render.
+  return svg.replace('</svg>', `<style><![CDATA[\n${koboCss()}\n]]></style></svg>`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
