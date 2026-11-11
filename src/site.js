@@ -3,6 +3,7 @@
 // headings, an FAQ, and JSON-LD structured data. Everything here is a fact about the product;
 // no invented numbers or testimonials.
 import { esc, assets, kobo } from './dashboard/ui.js';
+import { renderMarkdown, readingMinutes, plainText } from './blog.js';
 
 const GATEWAYS = ['Paystack', 'Flutterwave', 'Monnify', 'Korapay', 'Squad', 'Stripe', 'any gateway that signs its webhooks'];
 const DATABASES = ['MySQL', 'MariaDB', 'PostgreSQL', 'SQLite', 'MongoDB', 'WooCommerce'];
@@ -33,8 +34,8 @@ export function faq(f) {
   ];
 }
 
-function jsonLd(f) {
-  const data = [
+function jsonLdData(f) {
+  return [
     {
       '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: f.name, url: f.url,
       applicationCategory: 'BusinessApplication', operatingSystem: 'Web', description: f.description,
@@ -44,35 +45,45 @@ function jsonLd(f) {
     },
     { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq(f).map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
   ];
-  // "</" can't appear inside a script block; JSON-LD is data, so CSP doesn't execute it.
-  return data.map((d) => `<script type="application/ld+json">${JSON.stringify(d).replace(/</g, '\\u003c')}</script>`).join('');
+}
+
+const nav = (signedIn) => `<header class="m-nav"><a class="m-brand" href="/">${kobo({ mode: 'mark', size: 32, title: 'RecoverKit' })}<b>RecoverKit</b></a>
+  <nav aria-label="Site"><a href="/#how">How it works</a><a href="/#pricing">Pricing</a><a href="/blog">Blog</a><a href="/docs">Developers</a>${signedIn ? '<a href="/dashboard">Dashboard</a>' : '<a href="/login">Sign in</a>'}</nav></header>`;
+const footer = (f) => `<footer class="m-foot"><span>© ${new Date().getUTCFullYear()} RecoverKit</span><nav aria-label="Footer"><a href="/blog">Blog</a><a href="/docs">Developer docs</a><a href="https://github.com/Light8749/recoverkit">GitHub</a><a href="/login">Sign in</a>${f.signupOpen ? '<a href="/signup">Create an account</a>' : ''}</nav></footer>`;
+const ctaButtons = (f, signedIn) => (signedIn
+  ? '<a class="btn prominent" href="/dashboard">Open your dashboard</a>'
+  : `${f.signupOpen ? '<a class="btn prominent" href="/signup">Create a free account</a>' : ''}<a class="btn ${f.signupOpen ? 'tinted' : 'prominent'}" href="/login">Sign in</a>`);
+const ld = (data) => data.map((d) => `<script type="application/ld+json">${JSON.stringify(d).replace(/</g, '\\u003c')}</script>`).join('');
+
+/** <head> with SEO, Open Graph and Twitter tags. path is the canonical path, e.g. "/blog/x". */
+function head(f, { title, desc, path, type = 'website', extra = '', structured = [] }) {
+  const url = `${f.url}${path}`;
+  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(desc)}">
+<link rel="canonical" href="${esc(url)}">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<meta name="geo.region" content="NG"><meta name="geo.placename" content="Nigeria">
+<meta property="og:type" content="${type}"><meta property="og:site_name" content="RecoverKit"><meta property="og:locale" content="en_NG">
+<meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
+<meta property="og:url" content="${esc(url)}"><meta property="og:image" content="${esc(f.url)}/static/og.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Kobo the pigeon, RecoverKit's mascot, bringing back a coin">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${esc(f.url)}/static/og.png">
+<meta name="color-scheme" content="light dark"><meta name="theme-color" content="#007aff">
+<link rel="icon" type="image/svg+xml" href="/static/kobo.svg"><link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+<link rel="alternate" type="application/rss+xml" href="/blog/rss.xml" title="RecoverKit blog">${extra}
+<link rel="stylesheet" href="${assets.css}">${ld(structured)}</head>`;
 }
 
 export function landingPage(config, { signedIn = false, signupOpen = false } = {}) {
   const f = siteFacts(config, signupOpen);
   const title = 'RecoverKit: win back customers who signed up but never bought';
   const desc = `Find people who registered, funded a wallet or bought once and never came back. RecoverKit drafts WhatsApp, SMS and email follow-ups in your voice. Free to start; ${f.fee}% of recovered sales.`;
-  const cta = signedIn
-    ? '<a class="btn prominent" href="/dashboard">Open your dashboard</a>'
-    : `${f.signupOpen ? '<a class="btn prominent" href="/signup">Create a free account</a>' : ''}<a class="btn ${f.signupOpen ? 'tinted' : 'prominent'}" href="/login">Sign in</a>`;
+  const cta = ctaButtons(f, signedIn);
   const card = (t, d) => `<article class="m-card"><h3>${t}</h3><p>${d}</p></article>`;
-  return `<!doctype html><html lang="en-NG"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${esc(title)}</title>
-<meta name="description" content="${esc(desc)}">
-<link rel="canonical" href="${esc(f.url)}/">
-<meta name="robots" content="index,follow,max-image-preview:large">
-<meta name="geo.region" content="NG"><meta name="geo.placename" content="Nigeria">
-<meta property="og:type" content="website"><meta property="og:site_name" content="RecoverKit"><meta property="og:locale" content="en_NG">
-<meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="${esc(f.url)}/"><meta property="og:image" content="${esc(f.url)}/static/og.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Kobo the pigeon, RecoverKit's mascot, bringing back a coin">
-<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${esc(f.url)}/static/og.png">
-<meta name="color-scheme" content="light dark"><meta name="theme-color" content="#007aff">
-<link rel="icon" type="image/svg+xml" href="/static/kobo.svg"><link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
-<link rel="stylesheet" href="${assets.css}">${jsonLd(f)}</head>
+  return `${head(f, { title, desc, path: '/', structured: jsonLdData(f) })}
 <body class="marketing">
-<header class="m-nav"><a class="m-brand" href="/">${kobo({ mode: 'mark', size: 32, title: 'RecoverKit' })}<b>RecoverKit</b></a>
-  <nav aria-label="Site"><a href="#how">How it works</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a><a href="/docs">Developers</a>${signedIn ? '<a href="/dashboard">Dashboard</a>' : '<a href="/login">Sign in</a>'}</nav></header>
+${nav(signedIn)}
 <main id="main">
 <section class="m-hero">
   <div><p class="m-eyebrow">Sales recovery for Nigerian digital businesses</p>
@@ -119,8 +130,62 @@ export function landingPage(config, { signedIn = false, signupOpen = false } = {
 <section class="m-section" id="faq" aria-labelledby="faq-h"><h2 id="faq-h">Frequently asked questions</h2>
   ${faq(f).map(([q, a]) => `<details class="m-faq"><summary><h3>${esc(q)}</h3></summary><p>${esc(a)}</p></details>`).join('')}</section>
 </main>
-<footer class="m-foot"><span>© ${new Date().getUTCFullYear()} RecoverKit</span><nav aria-label="Footer"><a href="/docs">Developer docs</a><a href="https://github.com/Light8749/recoverkit">GitHub</a><a href="/login">Sign in</a>${f.signupOpen ? '<a href="/signup">Create an account</a>' : ''}</nav></footer>
+${footer(f)}
 </body></html>`;
+}
+
+const DATE = new Intl.DateTimeFormat('en-NG', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Lagos' });
+const iso = (ts) => new Date(ts).toISOString();
+
+export function blogIndexPage(config, { posts, signedIn = false, signupOpen = false }) {
+  const f = siteFacts(config, signupOpen);
+  const title = 'RecoverKit blog: win back lost customers in Nigeria';
+  const desc = 'Practical guides for Nigerian VTU, fintech, betting and online businesses on following up with customers who signed up, funded a wallet or bought once and went quiet.';
+  const items = posts.map((p) => `<article class="m-post-item"><h2><a href="/blog/${esc(p.slug)}">${esc(p.title)}</a></h2>
+    <p class="m-meta"><time datetime="${iso(p.published_at)}">${DATE.format(p.published_at)}</time> · ${readingMinutes(p.body)} min read</p>${p.description ? `<p>${esc(p.description)}</p>` : ''}</article>`).join('');
+  const structured = [{ '@context': 'https://schema.org', '@type': 'Blog', name: 'RecoverKit blog', url: `${f.url}/blog`, description: desc,
+    blogPost: posts.slice(0, 50).map((p) => ({ '@type': 'BlogPosting', headline: p.title, url: `${f.url}/blog/${p.slug}`, datePublished: iso(p.published_at) })) }];
+  return `${head(f, { title, desc, path: '/blog', structured })}
+<body class="marketing">${nav(signedIn)}
+<main id="main" class="m-article-wrap"><header class="m-blog-head"><h1>Blog</h1><p class="m-lead">${esc(desc)}</p></header>
+${items || '<p class="m-lead">The first articles are on their way.</p>'}
+</main>${footer(f)}</body></html>`;
+}
+
+export function blogPostPage(config, { post, more = [], signedIn = false, signupOpen = false }) {
+  const f = siteFacts(config, signupOpen);
+  const desc = post.description || plainText(post.body).slice(0, 155);
+  const url = `${f.url}/blog/${post.slug}`;
+  const structured = [
+    { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.title, description: desc, url, mainEntityOfPage: url,
+      datePublished: iso(post.published_at), dateModified: iso(post.updated_at), inLanguage: 'en-NG', image: `${f.url}/static/og.png`,
+      author: { '@type': 'Organization', name: 'RecoverKit', url: f.url }, publisher: { '@type': 'Organization', name: 'RecoverKit', url: f.url, logo: { '@type': 'ImageObject', url: `${f.url}/static/kobo.svg` } } },
+    { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: `${f.url}/` }, { '@type': 'ListItem', position: 2, name: 'Blog', item: `${f.url}/blog` },
+      { '@type': 'ListItem', position: 3, name: post.title, item: url }] },
+  ];
+  const extra = `\n<meta property="article:published_time" content="${iso(post.published_at)}"><meta property="article:modified_time" content="${iso(post.updated_at)}">`;
+  return `${head(f, { title: `${post.title} | RecoverKit`, desc, path: `/blog/${post.slug}`, type: 'article', extra, structured })}
+<body class="marketing">${nav(signedIn)}
+<main id="main" class="m-article-wrap"><article class="m-article">
+<nav class="m-crumbs" aria-label="Breadcrumb"><a href="/">Home</a> › <a href="/blog">Blog</a></nav>
+<h1>${esc(post.title)}</h1>
+<p class="m-meta"><time datetime="${iso(post.published_at)}">${DATE.format(post.published_at)}</time> · ${readingMinutes(post.body)} min read</p>
+<div class="m-prose">${renderMarkdown(post.body)}</div>
+<aside class="m-cta-box"><h2>Recover the customers you're already losing</h2><p>RecoverKit finds people who signed up, funded a wallet or bought once and went quiet, and drafts follow-ups in your voice for you to approve. Free to set up; ${f.fee}% of recovered sales.</p><div class="m-cta">${ctaButtons(f, signedIn)}</div></aside>
+</article>
+${more.length ? `<section class="m-more"><h2>More from the blog</h2>${more.map((p) => `<p><a href="/blog/${esc(p.slug)}">${esc(p.title)}</a></p>`).join('')}</section>` : ''}
+</main>${footer(f)}</body></html>`;
+}
+
+export function rssXml(config, posts) {
+  const f = siteFacts(config);
+  const x = (s) => esc(s);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>RecoverKit blog</title><link>${x(f.url)}/blog</link><description>Win back customers who signed up and never bought.</description><language>en-ng</language>
+${posts.map((p) => `<item><title>${x(p.title)}</title><link>${x(f.url)}/blog/${x(p.slug)}</link><guid>${x(f.url)}/blog/${x(p.slug)}</guid><pubDate>${new Date(p.published_at).toUTCString()}</pubDate><description>${x(p.description || plainText(p.body).slice(0, 300))}</description></item>`).join('\n')}
+</channel></rss>
+`;
 }
 
 export function robotsTxt(config) {
@@ -137,17 +202,18 @@ Sitemap: ${config.publicUrl}/sitemap.xml
 `;
 }
 
-export function sitemapXml(config, signupOpen = false) {
-  const pages = ['/', '/docs', ...(signupOpen ? ['/signup'] : []), '/login', '/llms.txt'];
+export function sitemapXml(config, signupOpen = false, posts = []) {
+  const pages = ['/', '/blog', '/docs', ...(signupOpen ? ['/signup'] : []), '/login', '/llms.txt'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${pages.map((p) => `  <url><loc>${esc(config.publicUrl + p)}</loc></url>`).join('\n')}
+${posts.map((p) => `  <url><loc>${esc(`${config.publicUrl}/blog/${p.slug}`)}</loc><lastmod>${new Date(p.updated_at).toISOString().slice(0, 10)}</lastmod></url>`).join('\n')}
 </urlset>
 `;
 }
 
 /** llms.txt (llmstxt.org): a plain summary for AI assistants and answer engines. */
-export function llmsTxt(config, signupOpen = false) {
+export function llmsTxt(config, signupOpen = false, posts = []) {
   const f = siteFacts(config, signupOpen);
   return `# RecoverKit
 
@@ -171,7 +237,8 @@ RecoverKit is a sales-recovery SDK and web dashboard. Website: ${f.url}
 
 - [Home](${f.url}/)
 - [Developer docs and API reference](${f.url}/docs)
-${f.signupOpen ? `- [Create an account](${f.url}/signup)\n` : ''}- [Source code (SDKs MIT-licensed)](https://github.com/Light8749/recoverkit)
+- [Blog](${f.url}/blog)
+${posts.map((p) => `- [${p.title}](${f.url}/blog/${p.slug})${p.description ? `: ${p.description}` : ''}`).join('\n')}${posts.length ? '\n' : ''}${f.signupOpen ? `- [Create an account](${f.url}/signup)\n` : ''}- [Source code (SDKs MIT-licensed)](https://github.com/Light8749/recoverkit)
 - npm: recoverkit (Node.js server SDK), recoverkit-connector (MongoDB connector)
 - Composer: light8749/recoverkit (PHP SDK and SQL connector)
 

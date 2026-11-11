@@ -23,7 +23,8 @@ import { brandSvg } from '../scripts/build-brand.js';
 import { loadDownloads, PHP_FILES } from './downloads.js';
 import { createAccounts } from './accounts.js';
 import { createMailer } from './mailer.js';
-import { landingPage, robotsTxt, sitemapXml, llmsTxt } from './site.js';
+import { landingPage, robotsTxt, sitemapXml, llmsTxt, blogIndexPage, blogPostPage, rssXml } from './site.js';
+import { createBlog } from './blog.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -51,8 +52,9 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   });
   const outreach = createOutreach({ db, keys, config, projects, people, engine, drafter, fetch, logger });
   const accounts = createAccounts(db);
+  const blog = createBlog(db);
   mailer ||= createMailer(config.mail, { fetch, logger });
-  const deps = { db, config, keys, accounts, mailer, logger, projects, people, engine, limiter, outreach, drafter, resolveAi };
+  const deps = { db, config, keys, accounts, mailer, logger, blog, projects, people, engine, limiter, outreach, drafter, resolveAi };
   const ingest = createIngest(deps);
   const webhooks = createWebhooks(deps);
   const connector = createConnectorApi({ ...deps, requireSecret: ingest.requireSecret, deps: { fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls } });
@@ -92,9 +94,17 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/v1/connector/sync', connector.sync)
     .add('POST', '/v1/webhooks/:gatewayId', webhooks.receive)
     .add('GET', '/', (req, res) => sendHtml(res, 200, landingPage(config, { signedIn: dash.isSignedIn(req), signupOpen: signupLive() }), { 'Cache-Control': 'no-cache' }))
+    .add('GET', '/blog', (req, res) => sendHtml(res, 200, blogIndexPage(config, { posts: blog.listPublished(), signedIn: dash.isSignedIn(req), signupOpen: signupLive() }), { 'Cache-Control': 'no-cache' }))
+    .add('GET', '/blog/rss.xml', text(() => rssXml(config, blog.listPublished(50)), 'application/rss+xml; charset=utf-8'))
+    .add('GET', '/blog/:slug', (req, res, params) => {
+      const post = blog.published(params.slug);
+      if (!post) return sendHtml(res, 404, blogIndexPage(config, { posts: blog.listPublished(), signupOpen: signupLive() }).replace('<h1>Blog</h1>', '<h1>That article isn\'t here</h1>'), { 'X-Robots-Tag': 'noindex' });
+      const more = blog.listPublished(4).filter((p) => p.slug !== post.slug).slice(0, 3);
+      sendHtml(res, 200, blogPostPage(config, { post, more, signedIn: dash.isSignedIn(req), signupOpen: signupLive() }), { 'Cache-Control': 'no-cache' });
+    })
     .add('GET', '/robots.txt', text(() => robotsTxt(config), 'text/plain; charset=utf-8'))
-    .add('GET', '/sitemap.xml', text(() => sitemapXml(config, signupLive()), 'application/xml; charset=utf-8'))
-    .add('GET', '/llms.txt', text(() => llmsTxt(config, signupLive()), 'text/plain; charset=utf-8'))
+    .add('GET', '/sitemap.xml', text(() => sitemapXml(config, signupLive(), blog.listPublished()), 'application/xml; charset=utf-8'))
+    .add('GET', '/llms.txt', text(() => llmsTxt(config, signupLive(), blog.listPublished()), 'text/plain; charset=utf-8'))
     .add('GET', '/static/og.png', (_q, res) => (ogImage ? send(res, 200, ogImage, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'Cross-Origin-Resource-Policy': 'cross-origin' }) : send(res, 404, { error: 'not found' })))
     .add('GET', '/login', dash.loginPage)
     .add('POST', '/login', dash.login)
@@ -112,6 +122,13 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/admin/businesses/:id/users', dash.addUserAction)
     .add('POST', '/admin/users/:id/link', dash.userLinkAction)
     .add('POST', '/admin/mail-test', dash.mailTestAction)
+    .add('GET', '/admin/blog', dash.blogList)
+    .add('GET', '/admin/blog/new', dash.blogNew)
+    .add('POST', '/admin/blog', dash.blogCreate)
+    .add('POST', '/admin/blog/starters', dash.blogStarters)
+    .add('GET', '/admin/blog/:id', dash.blogEdit)
+    .add('POST', '/admin/blog/:id', dash.blogUpdate)
+    .add('POST', '/admin/blog/:id/delete', dash.blogDelete)
     .add('GET', '/dashboard', dash.overview)
     .add('GET', '/dashboard/leads', dash.leadsPage)
     .add('GET', '/dashboard/messages', dash.messagesPage)

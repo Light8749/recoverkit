@@ -29,6 +29,7 @@ const ICONS = {
   channels: '<path d="M21 3L3 10.5l7 2.5 2.5 7z"/><path d="M10 13l5-5"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
   admin: '<path d="M3 21h18M5 21V9l7-5 7 5v12"/><path d="M9.5 21v-6h5v6"/>',
+  blog: '<path d="M5 4h10l4 4v12H5z"/><path d="M15 4v4h4M8.5 12h7M8.5 15.5h7M8.5 8.5h3"/>',
   developers: '<path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 4l-3 16"/>',
   chevron: '<path d="M9 5l7 7-7 7"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
@@ -56,10 +57,10 @@ export function page({ title, active, ctx, body, actions = '', subtitle = '', wi
   const navItem = ([key, href, label]) => `<a href="${href}" class="nav-item"${key === active ? ' aria-current="page"' : ''}>${icon(key)}<span>${label}</span>${key === 'messages' ? badge : ''}</a>`;
   const sidebar = ctx?.user ? `<aside class="sidebar" aria-label="Main">
       <div class="brand">${kobo({ mode: 'mark', size: 36 })}<div><b>RecoverKit</b><small>${esc(ctx.project.name)}</small></div></div>
-      ${[...NAV, ...(ctx.user.is_admin ? [{ group: 'Admin', items: [['admin', '/admin', 'Businesses']] }] : [])].map((g) => `<nav class="nav-group">${g.group ? `<h2 class="nav-title">${g.group}</h2>` : ''}${g.items.map(navItem).join('')}</nav>`).join('')}
+      ${[...NAV, ...(ctx.user.is_admin ? [{ group: 'Admin', items: [['admin', '/admin', 'Businesses'], ['blog', '/admin/blog', 'Blog']] }] : [])].map((g) => `<nav class="nav-group">${g.group ? `<h2 class="nav-title">${g.group}</h2>` : ''}${g.items.map(navItem).join('')}</nav>`).join('')}
       <form method="post" action="/logout" class="sidebar-foot">${csrfField(ctx)}<span>${esc(ctx.user.email)}</span><button class="btn plain small">Log out</button></form>
     </aside>
-    <nav class="tabbar" aria-label="Main">${TABS.map(([key, href, label]) => `<a href="${href}"${key === active || (key === 'settings' && ['ai', 'channels', 'developers', 'admin'].includes(active)) ? ' aria-current="page"' : ''}>${icon(key)}<span>${label}</span>${key === 'messages' ? badge : ''}</a>`).join('')}</nav>` : '';
+    <nav class="tabbar" aria-label="Main">${TABS.map(([key, href, label]) => `<a href="${href}"${key === active || (key === 'settings' && ['ai', 'channels', 'developers', 'admin', 'blog'].includes(active)) ? ' aria-current="page"' : ''}>${icon(key)}<span>${label}</span>${key === 'messages' ? badge : ''}</a>`).join('')}</nav>` : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark"><link rel="icon" type="image/svg+xml" href="/static/kobo.svg"><title>${esc(title)} · RecoverKit</title><link rel="stylesheet" href="${assets.css}"></head>
 <body class="${ctx?.user ? 'signed-in' : wide ? 'public-doc' : 'signed-out'}">${sidebar}

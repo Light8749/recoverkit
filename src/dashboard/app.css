@@ -263,6 +263,33 @@ body.marketing { background: var(--bg-2); }
 @media (min-width: 820px) { .m-hero { grid-template-columns: 1.4fr 1fr; padding: 72px 0 48px; } .m-section { scroll-margin-top: 64px; } }
 @media (max-width: 819px) { .m-nav { position: static; } .m-nav nav { gap: 6px 14px; } .m-hero-art { order: -1; } }
 
+/* ---------- blog ---------- */
+.m-article-wrap { max-width: 720px !important; padding-top: 32px !important; padding-bottom: 32px !important; }
+.m-blog-head h1, .m-article h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; letter-spacing: -.025em; margin: 0 0 12px; }
+.m-post-item { padding: 22px 0; border-top: .5px solid var(--separator); }
+.m-post-item h2 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; }
+.m-post-item h2 a { color: var(--label); }
+.m-post-item p { margin: 4px 0 0; color: var(--label-2); }
+.m-meta { color: var(--label-2); font-size: 14px; margin: 0 0 24px; }
+.m-crumbs { font-size: 14px; color: var(--label-2); margin: 0 0 14px; }
+.m-prose { font-size: 18px; line-height: 1.65; }
+.m-prose h2 { font-size: 26px; letter-spacing: -.015em; margin: 36px 0 10px; line-height: 1.2; }
+.m-prose h3 { font-size: 20px; margin: 28px 0 8px; }
+.m-prose p, .m-prose ul, .m-prose ol, .m-prose blockquote { margin: 0 0 18px; }
+.m-prose li { margin: 0 0 6px; }
+.m-prose a { text-decoration: underline; text-underline-offset: 2px; }
+.m-prose blockquote { border-left: 3px solid var(--blue); padding: 2px 0 2px 16px; color: var(--label-2); }
+.m-prose pre { background: var(--bg); border-radius: 10px; padding: 14px; overflow-x: auto; white-space: pre; word-break: normal; }
+.m-prose hr { border: 0; border-top: .5px solid var(--separator); margin: 28px 0; }
+.m-cta-box { background: var(--bg); border-radius: 18px; padding: 22px; margin: 40px 0 0; }
+.m-cta-box h2 { font-size: 22px; margin: 0 0 8px; }
+.m-cta-box p { color: var(--label-2); margin: 0 0 14px; }
+.m-more { padding: 28px 0 0; }
+.m-more h2 { font-size: 20px; margin: 0 0 10px; }
+.blog-preview { padding: 16px 20px; }
+.blog-preview h1 { font-size: 30px; margin: 0 0 14px; }
+textarea.blog-body { font-family: var(--mono); font-size: 14px; line-height: 1.55; }
+
 /* ---------- sign in / standalone ---------- */
 .signed-out .content { max-width: 420px; padding-top: 4vh; }
 .signed-out .page-head { justify-content: center; text-align: center; }

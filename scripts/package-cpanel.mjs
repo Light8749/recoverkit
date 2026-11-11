@@ -11,7 +11,7 @@ const app = join(out, 'recoverkit');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(app, { recursive: true });
 
-for (const dir of ['src', 'sdk/core', 'sdk/browser', 'sdk/php', 'assets/brand']) cpSync(join(root, dir), join(app, dir), { recursive: true });
+for (const dir of ['src', 'sdk/core', 'sdk/browser', 'sdk/php', 'assets/brand', 'content']) cpSync(join(root, dir), join(app, dir), { recursive: true });
 mkdirSync(join(app, 'scripts'), { recursive: true });
 for (const f of ['build-browser.js', 'build-brand.js']) copyFileSync(join(root, 'scripts', f), join(app, 'scripts', f));
 for (const f of ['app.cjs', 'LICENSE']) copyFileSync(join(root, f), join(app, f));

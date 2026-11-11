@@ -9,6 +9,7 @@ import { normalizeEmail } from '../../sdk/core/identity.js';
 import { kobo } from './mascot.js';
 import { developerGuide, apiReference } from './devguide.js';
 import { createAccountPages } from './admin.js';
+import { createBlogAdmin } from './blogadmin.js';
 import { esc, money, ago, icon, csrfField, banner, page, group, row, switchRow, field, select, segmented, bar, pill, empty } from './ui.js';
 
 export { esc };
@@ -22,7 +23,7 @@ const STAGE_LABEL = {
 };
 const FIELD_LABEL = { ref: 'Payment reference', amount: 'Amount', currency: 'Currency', email: 'Customer email', phone: 'Customer phone', name: 'Customer name', time: 'Paid at', eventId: 'Unique event ID', kind: 'Sale or deposit tag' };
 
-export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger }) {
+export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger, blog }) {
   const secureCookie = config.publicUrl.startsWith('https://');
   const cookie = (v, maxAge) => `rk_session=${v}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
 
@@ -66,6 +67,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
   const back = (res, path, ok, err) => redirect(res, `${path}${path.includes('?') ? '&' : '?'}${ok ? 'ok=' + encodeURIComponent(ok) : 'err=' + encodeURIComponent(err)}`);
 
   const acct = createAccountPages({ db, config, projects, engine, limiter, accounts, mailer, logger, requireSession, postCtx, sameOrigin, back });
+  const blogAdmin = createBlogAdmin({ blog, projects, config, requireAdmin: acct.requireAdmin, adminPost: acct.adminPost, back });
 
   // ================= auth =================
   function loginPage(req, res, _p, url) {
@@ -562,6 +564,6 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
     aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction,
     settingsPage, settingsAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, sendAction,
-    developersPage, developerKeyAction, sharedGuidePage, docsPage, ...acct, isSignedIn: (req) => Boolean(session(req)),
+    developersPage, developerKeyAction, sharedGuidePage, docsPage, ...acct, ...blogAdmin, isSignedIn: (req) => Boolean(session(req)),
   };
 }

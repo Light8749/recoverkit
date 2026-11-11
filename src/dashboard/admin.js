@@ -162,8 +162,8 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
     if (!ctx.user.is_admin) throw new HttpError(403, 'Only the admin of this RecoverKit server can open this page.');
     return ctx;
   }
-  async function adminPost(req) {
-    const r = await postCtx(req);
+  async function adminPost(req, limit) {
+    const r = await postCtx(req, limit);
     if (!r.ctx.user.is_admin) throw new HttpError(403, 'Only the admin of this RecoverKit server can do this.');
     return r;
   }
@@ -279,7 +279,7 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
   }
 
   return {
-    signupPage, signup, mailTestAction, forgotPage, forgot, resetPage, reset, changePasswordAction, passwordGroup,
+    requireAdmin, adminPost, signupPage, signup, mailTestAction, forgotPage, forgot, resetPage, reset, changePasswordAction, passwordGroup,
     adminPage, addBusinessAction, adminBusinessPage, addUserAction, userLinkAction,
   };
 }
