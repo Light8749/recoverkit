@@ -229,6 +229,7 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 | `RK_MASTER_KEY` | — (required) | 32+ random bytes, base64. Derives the identity pepper, encryption key and token-signing key. |
 | `RK_PUBLIC_URL` | `http://localhost:8787` | Must be `https://` in production. |
 | `RK_TRUST_PROXY` | off | Set `1` behind a TLS proxy so client IPs and https are detected. |
+| `RK_GOOGLE_VERIFY` | none | Google Search Console HTML-file verification: set it to the file name without `.html`, e.g. `google4cdb70df215417e3`. |
 | `RK_SIGNUP` | invite-only | `open` lets businesses create their own account at `/signup` (needs email set up). |
 | `RK_MAIL_FROM` | none | Sender for invites and password resets, e.g. `RecoverKit <no-reply@yourdomain.com>`. Without it, links are shown on the Admin page for you to send. |
 | `RK_BREVO_API_KEY` | none | Send those emails through Brevo's HTTPS API. Use this on shared hosting that blocks SMTP ports (an `ECONNREFUSED …:587` error). |

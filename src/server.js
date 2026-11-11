@@ -102,6 +102,9 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
       const more = blog.listPublished(4).filter((p) => p.slug !== post.slug).slice(0, 3);
       sendHtml(res, 200, blogPostPage(config, { post, more, signedIn: dash.isSignedIn(req), signupOpen: signupLive() }), { 'Cache-Control': 'no-cache' });
     })
+    .add('GET', '/:file.html', (_q, res, params) => (config.googleVerify && params.file === config.googleVerify
+      ? send(res, 200, `google-site-verification: ${config.googleVerify}.html`, { 'Content-Type': 'text/html; charset=utf-8' })
+      : send(res, 404, { error: 'not found' })))
     .add('GET', '/robots.txt', text(() => robotsTxt(config), 'text/plain; charset=utf-8'))
     .add('GET', '/sitemap.xml', text(() => sitemapXml(config, signupLive(), blog.listPublished()), 'application/xml; charset=utf-8'))
     .add('GET', '/llms.txt', text(() => llmsTxt(config, signupLive(), blog.listPublished()), 'text/plain; charset=utf-8'))

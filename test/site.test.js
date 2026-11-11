@@ -86,3 +86,13 @@ test('with sign-up open and email set up, the site and sitemap link to /signup',
   assert.match(await (await fetch(b + '/llms.txt')).text(), /Create an account\]\(https:\/\/recover\.example\.ng\/signup\)/);
   await a.close(); rmSync(d, { recursive: true, force: true });
 });
+
+test('Google Search Console verification file, only when configured', async () => {
+  assert.equal((await fetch(base + '/google4cdb70df215417e3.html')).status, 404);
+  cfg.googleVerify = 'google4cdb70df215417e3';
+  const r = await fetch(base + '/google4cdb70df215417e3.html');
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), 'google-site-verification: google4cdb70df215417e3.html');
+  assert.equal((await fetch(base + '/google0000000000000000.html')).status, 404);
+  cfg.googleVerify = null;
+});
