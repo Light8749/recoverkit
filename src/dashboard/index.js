@@ -122,7 +122,9 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
       <a class="btn tinted small" href="/dashboard/payments">${gws.length ? 'Check gateways' : 'Connect a gateway'}</a></div>`;
     const tiles = [
       ['Recovered revenue', money(rev.recoveredAmount, p.currency), `${rev.recoveredPurchases} purchase${rev.recoveredPurchases === 1 ? '' : 's'} within ${config.attributionDays} days of a message`],
-      [`Fee (${config.feePercent}%)`, money(rev.fee, p.currency), 'Only charged on recovered sales'],
+      config.feePercent
+        ? [`Fee (${config.feePercent}%)`, money(rev.fee, p.currency), 'Only charged on recovered sales']
+        : ['People to follow up', String(['registered', 'browsed', 'checkout_abandoned', 'funded_not_bought', 'bought_once', 'lapsed_repeat'].reduce((n, k) => n + (f[k] || 0), 0)), '<a href="/dashboard/leads">See your leads</a>'],
       ['Messages sent', String(rev.messagesSent), 'All time'],
       ['Waiting for you', String(ctx.badge), ctx.badge ? '<a href="/dashboard/messages">Review drafts</a>' : 'No drafts to review'],
     ];

@@ -40,7 +40,8 @@ export function readConfig(env = process.env) {
     // Lets a business point the AI at a private address (e.g. Ollama on this machine). Off by default (SSRF).
     allowPrivateAiUrls: env.RK_ALLOW_PRIVATE_AI_URLS === '1',
     attributionDays: Number(env.RK_ATTRIBUTION_DAYS || 7),
-    feePercent: Number(env.RK_FEE_PERCENT || 10),
+    // RecoverKit is free by default. RK_FEE_PERCENT turns on a fee on recovered revenue (shown, not collected).
+    feePercent: Number(env.RK_FEE_PERCENT || 0),
     minDaysBetweenMessages: Number(env.RK_MIN_DAYS_BETWEEN_MESSAGES || 7),
     // Raw events older than this are deleted (data minimisation). Purchases and messages are kept.
     retentionDays: Number(env.RK_RETENTION_DAYS || 395),

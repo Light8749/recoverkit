@@ -12,7 +12,7 @@ export function siteFacts(config, signupOpen = false) {
   return {
     name: 'RecoverKit',
     url: config.publicUrl,
-    fee: config.feePercent ?? 10,
+    fee: Number(config.feePercent) || 0,
     days: config.attributionDays ?? 7,
     signupOpen,
     description: 'RecoverKit finds the customers a business is losing (people who signed up but never bought, funded a wallet but never bought, or bought once and went quiet), drafts WhatsApp, SMS and email follow-ups in the business\'s own voice, and counts the sales it wins back. Built for Nigerian VTU, fintech, betting, e-commerce and subscription businesses.',
@@ -23,7 +23,9 @@ export function faq(f) {
   return [
     ['What is RecoverKit?', `RecoverKit is a sales-recovery tool for digital businesses. It finds people who registered but never bought, funded a wallet but never bought, or bought once and stopped, then drafts personal follow-up messages for the business to approve and send by WhatsApp, SMS or email.`],
     ['Who is RecoverKit for?', 'Nigerian and African digital businesses: VTU (airtime and data) sites, fintech and wallet apps, betting platforms, online stores and subscription services. It works with any website or app.'],
-    ['How much does RecoverKit cost?', `Setting up is free. RecoverKit charges ${f.fee}% of the revenue it recovers: a verified purchase within ${f.days} days of a follow-up message. If nothing is recovered, you pay nothing.`],
+    ['How much does RecoverKit cost?', f.fee
+      ? `Setting up is free. RecoverKit charges ${f.fee}% of the revenue it recovers: a verified purchase within ${f.days} days of a follow-up message. If nothing is recovered, you pay nothing.`
+      : 'RecoverKit is free. There is no monthly fee, no commission on recovered sales, and no card needed to sign up. You only pay your own providers for messages you send (WhatsApp, SMS or email) and for an AI model if you choose one.'],
     ['How does RecoverKit know someone really bought?', 'From three places: signed payment webhooks (Paystack, Flutterwave, Monnify and others), your own server calling trackPurchase, or your database through a read-only connector. A "payment successful" screen in the browser is never trusted as proof, so nobody who already paid gets chased.'],
     ['Is a wallet deposit counted as a sale?', 'No. For VTU, betting and fintech apps a deposit is not a purchase. People who fund their wallet and never buy anything are treated as leads, and only real purchases count as sales.'],
     ['Can RecoverKit use my existing customers?', `Yes. A read-only connector runs on your own server and reads your existing database where it is (${DATABASES.join(', ')}), with any table design and any programming language. It sends only hashed IDs, dates and amounts, never raw customer data.`],
@@ -39,7 +41,8 @@ function jsonLdData(f) {
     {
       '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: f.name, url: f.url,
       applicationCategory: 'BusinessApplication', operatingSystem: 'Web', description: f.description,
-      offers: { '@type': 'Offer', price: '0', priceCurrency: 'NGN', description: `Free to set up; ${f.fee}% of recovered revenue.` },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'NGN', description: f.fee ? `Free to set up; ${f.fee}% of recovered revenue.` : 'Free. No monthly fee and no commission.' },
+      isAccessibleForFree: !f.fee,
       areaServed: [{ '@type': 'Country', name: 'Nigeria' }, { '@type': 'Place', name: 'Africa' }],
       featureList: ['Finds sign-ups who never bought', 'Wallet deposits are not counted as sales', 'AI follow-ups in your own voice', 'Approve before sending', 'WhatsApp, SMS and email', 'Read-only connector for existing databases', 'Revenue attribution'],
     },
@@ -78,7 +81,7 @@ function head(f, { title, desc, path, type = 'website', extra = '', structured =
 export function landingPage(config, { signedIn = false, signupOpen = false } = {}) {
   const f = siteFacts(config, signupOpen);
   const title = 'RecoverKit: win back customers who signed up but never bought';
-  const desc = `Find people who registered, funded a wallet or bought once and never came back. RecoverKit drafts WhatsApp, SMS and email follow-ups in your voice. Free to start; ${f.fee}% of recovered sales.`;
+  const desc = `Find people who registered, funded a wallet or bought once and never came back. RecoverKit drafts WhatsApp, SMS and email follow-ups in your voice. ${f.fee ? `Free to start; ${f.fee}% of recovered sales.` : 'Free, no card needed.'}`;
   const cta = ctaButtons(f, signedIn);
   const card = (t, d) => `<article class="m-card"><h3>${t}</h3><p>${d}</p></article>`;
   return `${head(f, { title, desc, path: '/', structured: jsonLdData(f) })}
@@ -90,7 +93,7 @@ ${nav(signedIn)}
   <h1>Win back the customers who signed up and never bought.</h1>
   <p class="m-lead">RecoverKit finds people who registered, funded a wallet or bought once and went quiet. It drafts a personal WhatsApp, SMS or email follow-up in your own voice, you approve it, and it counts every sale it wins back.</p>
   <div class="m-cta">${cta}<a class="btn plain" href="#how">See how it works</a></div>
-  <p class="m-small">Free to set up. You pay ${f.fee}% of recovered sales, and nothing if nothing is recovered.</p></div>
+  <p class="m-small">${f.fee ? `Free to set up. You pay ${f.fee}% of recovered sales, and nothing if nothing is recovered.` : 'Free. No monthly fee, no commission, no card needed.'}</p></div>
   <div class="m-hero-art">${kobo({ mode: 'hero', size: 260, title: 'Kobo the pigeon flying out and bringing back a coin' })}</div>
 </section>
 
@@ -123,8 +126,10 @@ ${nav(signedIn)}
   <p class="m-lead">VTU sites selling airtime and data, fintech and wallet apps, betting platforms, online stores and subscription services across Nigeria and Africa. If people sign up on your website or app and pay you online, RecoverKit can follow up with the ones who didn't.</p></section>
 
 <section class="m-section" id="pricing" aria-labelledby="pricing-h"><h2 id="pricing-h">Pricing</h2>
-  <div class="m-price"><b>${f.fee}%</b><span>of recovered revenue</span></div>
-  <ul class="m-list"><li>Free to set up, no monthly fee</li><li>Recovered means a verified purchase within ${f.days} days of a follow-up</li><li>Nothing to pay if nothing is recovered</li></ul>
+  ${f.fee ? `<div class="m-price"><b>${f.fee}%</b><span>of recovered revenue</span></div>
+  <ul class="m-list"><li>Free to set up, no monthly fee</li><li>Recovered means a verified purchase within ${f.days} days of a follow-up</li><li>Nothing to pay if nothing is recovered</li></ul>`
+    : `<div class="m-price"><b>Free</b><span>for every business</span></div>
+  <ul class="m-list"><li>No monthly fee and no commission on recovered sales</li><li>No card needed to sign up</li><li>You only pay your own providers for the messages you send (WhatsApp, SMS or email), and an AI model if you choose one</li></ul>`}
   <div class="m-cta">${cta}</div></section>
 
 <section class="m-section" id="faq" aria-labelledby="faq-h"><h2 id="faq-h">Frequently asked questions</h2>
@@ -172,7 +177,7 @@ export function blogPostPage(config, { post, more = [], signedIn = false, signup
 <h1>${esc(post.title)}</h1>
 <p class="m-meta"><time datetime="${iso(post.published_at)}">${DATE.format(post.published_at)}</time> · ${readingMinutes(post.body)} min read</p>
 <div class="m-prose">${renderMarkdown(post.body)}</div>
-<aside class="m-cta-box"><h2>Recover the customers you're already losing</h2><p>RecoverKit finds people who signed up, funded a wallet or bought once and went quiet, and drafts follow-ups in your voice for you to approve. Free to set up; ${f.fee}% of recovered sales.</p><div class="m-cta">${ctaButtons(f, signedIn)}</div></aside>
+<aside class="m-cta-box"><h2>Recover the customers you're already losing</h2><p>RecoverKit finds people who signed up, funded a wallet or bought once and went quiet, and drafts follow-ups in your voice for you to approve. ${f.fee ? `Free to set up; ${f.fee}% of recovered sales.` : 'Free, with no card needed.'}</p><div class="m-cta">${ctaButtons(f, signedIn)}</div></aside>
 </article>
 ${more.length ? `<section class="m-more"><h2>More from the blog</h2>${more.map((p) => `<p><a href="/blog/${esc(p.slug)}">${esc(p.title)}</a></p>`).join('')}</section>` : ''}
 </main>${footer(f)}</body></html>`;
@@ -230,7 +235,7 @@ RecoverKit is a sales-recovery SDK and web dashboard. Website: ${f.url}
 - Every message is approved by the business before it is sent, by WhatsApp (Cloud API), SMS (Termii) or email.
 - Existing customers can be imported with a read-only connector that reads ${DATABASES.join(', ')} in place, with any schema or programming language.
 - Privacy: emails and phones are hashed before they leave the device or server; contact details are encrypted with AES-256-GCM; people can be erased on request (Nigeria Data Protection Act).
-- Pricing: free to set up; ${f.fee}% of recovered revenue, meaning a verified purchase within ${f.days} days of a follow-up. Nothing to pay if nothing is recovered.
+- Pricing: ${f.fee ? `free to set up; ${f.fee}% of recovered revenue, meaning a verified purchase within ${f.days} days of a follow-up. Nothing to pay if nothing is recovered.` : 'free. No monthly fee, no commission and no card needed; businesses only pay their own messaging and AI providers.'}
 - Built for Nigerian and African digital businesses: VTU (airtime and data), fintech, betting, e-commerce and subscriptions.
 
 ## Links

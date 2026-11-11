@@ -13,7 +13,7 @@ for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) rmSync(f, { force: t
 
 const config = {
   masterKey: randomBytes(32), port, host: '127.0.0.1', dbPath, publicUrl: `http://localhost:${port}`, trustProxy: false,
-  ai: { provider: 'none' }, allowPrivateAiUrls: false, attributionDays: 7, feePercent: 10, minDaysBetweenMessages: 7, retentionDays: 395,
+  ai: { provider: 'none' }, allowPrivateAiUrls: false, attributionDays: 7, feePercent: 0, minDaysBetweenMessages: 7, retentionDays: 395,
 };
 // Demo: sign-up is open and emails are printed here instead of being sent.
 config.signup = 'open';

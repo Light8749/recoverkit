@@ -96,3 +96,19 @@ test('Google Search Console verification file, only when configured', async () =
   assert.equal((await fetch(base + '/google0000000000000000.html')).status, 404);
   cfg.googleVerify = null;
 });
+
+test('free by default: no fee anywhere on the site, FAQ or llms.txt', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'rk-free-'));
+  const c = { ...cfg, dbPath: join(d, 't.db'), feePercent: 0 };
+  const a = await createApp({ config: c, logger: { log() {}, warn() {}, error() {} } });
+  await new Promise((r) => a.server.listen(0, '127.0.0.1', r));
+  const b = `http://127.0.0.1:${a.server.address().port}`;
+  const html = await (await fetch(b + '/')).text();
+  assert.match(html, /<b>Free<\/b>/);
+  assert.match(html, /no card needed/i);
+  assert.ok(!/% of recovered|commission on recovered sales\./.test(html.replace('no commission on recovered sales', '')), 'no fee claims');
+  const app = [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].map((m) => JSON.parse(m[1])).find((x) => x['@type'] === 'SoftwareApplication');
+  assert.equal(app.isAccessibleForFree, true);
+  assert.match(await (await fetch(b + '/llms.txt')).text(), /Pricing: free\./);
+  await a.close(); rmSync(d, { recursive: true, force: true });
+});

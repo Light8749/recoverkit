@@ -218,9 +218,9 @@ Channels (Settings): WhatsApp Cloud API (needs an approved template with one `{{
 
 Run `npm run cli -- send <projectId>` from cron to send approved messages automatically, or use the Send button.
 
-## Recovered revenue and pricing
+## Recovered revenue
 
-A verified purchase within 7 days of a sent message counts as recovered (`RK_ATTRIBUTION_DAYS`). The overview shows recovered revenue and the fee (`RK_FEE_PERCENT`, default 10%).
+A verified purchase within 7 days of a sent message counts as recovered (`RK_ATTRIBUTION_DAYS`). The overview shows recovered revenue. RecoverKit is free by default; `RK_FEE_PERCENT` shows a fee on recovered revenue on the overview (it isn't collected).
 
 ## Configuration
 
