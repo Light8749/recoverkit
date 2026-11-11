@@ -32,5 +32,14 @@
     "mongodb",
     "sales-recovery",
     "connector"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Light8749/recoverkit.git",
+    "directory": "sdk/connector-node"
+  },
+  "homepage": "https://github.com/Light8749/recoverkit#readme",
+  "bugs": {
+    "url": "https://github.com/Light8749/recoverkit/issues"
+  }
 }

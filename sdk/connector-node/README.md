@@ -10,4 +10,6 @@ npx recoverkit-connector sync   --app=/path/to/your/app  # first run sends histo
 
 Set `RK_PUBLIC_KEY`, `RK_SECRET_KEY` and `RK_ENDPOINT` (from your RecoverKit dashboard) in the environment or in your app's `.env`. Use a MongoDB login with only the `read` role: setup checks this, and prints the command to create one.
 
-SQL databases (MySQL, MariaDB, PostgreSQL, SQLite) use the PHP connector, or its Docker image, from the main RecoverKit repository.
+SQL databases (MySQL, MariaDB, PostgreSQL, SQLite) use the PHP connector, or its Docker image, from the main repository: https://github.com/Light8749/recoverkit
+
+License: all rights reserved (source-available). See the repository's LICENSE.
