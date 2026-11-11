@@ -75,6 +75,14 @@ RK_SMTP_PASS=your-brevo-smtp-key
 
 Restart, then click **Send a test email** on the Businesses page.
 
+If it says `ECONNREFUSED …:587`, your host blocks outgoing SMTP (common on shared hosting). Use Brevo's API instead, which goes over normal HTTPS: in Brevo → **SMTP & API → API Keys**, create a key, then replace the four `RK_SMTP_…` lines with one line and Restart:
+
+```
+RK_BREVO_API_KEY=xkeysib-...
+```
+
+If the test then says the IP address isn't recognised, allow your server's IP in Brevo → **Security → Authorised IPs**.
+
 Without RK_MAIL_FROM, the Businesses page shows each link for you to send by WhatsApp.
 
 ## Keep it safe

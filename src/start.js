@@ -7,7 +7,7 @@ import { createApp } from './server.js';
 loadDotEnv();
 const config = readConfig();
 if (!existsSync(config.dbPath)) console.log(`Creating database at ${config.dbPath}`);
-console.warn(`Email for invites and password resets: ${config.mail.mode === 'none' ? 'not set up (add RK_MAIL_FROM to .env)' : config.mail.mode === 'smtp' ? `SMTP via ${config.mail.host}:${config.mail.port}` : config.mail.mode}`);
+console.warn(`Email for invites and password resets: ${config.mail.mode === 'none' ? 'not set up (add RK_MAIL_FROM to .env)' : config.mail.mode === 'smtp' ? `SMTP via ${config.mail.host}:${config.mail.port}` : config.mail.mode === 'brevo' ? 'Brevo API' : config.mail.mode}`);
 if (!config.publicUrl.startsWith('https://') && !/^http:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(config.publicUrl)) {
   console.warn('WARNING: RK_PUBLIC_URL is not https. Run behind TLS in production (cookies are only marked Secure on https).');
 }

@@ -111,3 +111,18 @@ test('mailer: Brevo-style settings from env, and a full send through SMTP', asyn
   const quiet = createMailer({ mode: 'smtp', from: 'x@y.ng', host: 'localhost', port: 1 }, { logger: { warn() {} } });
   assert.equal((await quiet.send({ to: 'a@b.ng', subject: 's', text: 't' })).ok, false, 'connection errors are reported, not thrown');
 });
+
+test('mailer: Brevo HTTPS API (for hosts that block SMTP ports)', async () => {
+  const cfg = mailFromEnv({ RK_MAIL_FROM: 'RecoverKit <no-reply@padi.ng>', RK_BREVO_API_KEY: 'xkeysib-test', RK_SMTP_HOST: 'smtp-relay.brevo.com' });
+  assert.equal(cfg.mode, 'brevo', 'the API wins over SMTP when both are set');
+  const calls = [];
+  const fetch = async (url, init) => { calls.push({ url, init }); return new Response('{"messageId":"m1"}', { status: 201 }); };
+  const m = createMailer(cfg, { fetch });
+  assert.deepEqual(await m.send({ to: 'ada@shop.ng', subject: 'Reset your RecoverKit password', text: 'Hello' }), { ok: true });
+  assert.equal(calls[0].url, 'https://api.brevo.com/v3/smtp/email');
+  assert.equal(calls[0].init.headers['api-key'], 'xkeysib-test');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { sender: { name: 'RecoverKit', email: 'no-reply@padi.ng' }, to: [{ email: 'ada@shop.ng' }], subject: 'Reset your RecoverKit password', textContent: 'Hello' });
+  const bad = createMailer(cfg, { fetch: async () => new Response('{"message":"Sender not valid"}', { status: 400 }) });
+  assert.deepEqual(await bad.send({ to: 'ada@shop.ng', subject: 's', text: 't' }), { ok: false, error: 'brevo 400: Sender not valid' });
+  assert.equal((await m.send({ to: 'a@b.ng\r\nBcc: x@y.ng', subject: 's', text: 't' })).ok, false, 'header checks still apply');
+});

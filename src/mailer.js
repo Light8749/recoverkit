@@ -1,5 +1,6 @@
 // System email (password resets, invites): not customer follow-ups, which use each business's channels.
 //   RK_MAIL_FROM        e.g. "RecoverKit <no-reply@yourdomain.com>"  (required to send anything)
+//   RK_BREVO_API_KEY    send through Brevo's HTTPS API (works where hosting blocks SMTP ports); otherwise...
 //   RK_SMTP_HOST        send through SMTP (Brevo: smtp-relay.brevo.com), with RK_SMTP_PORT (587),
 //                       RK_SMTP_USER and RK_SMTP_PASS; otherwise...
 //   RK_RESEND_API_KEY   send through Resend's API; otherwise...
@@ -16,6 +17,7 @@ export function mailFromEnv(env = process.env) {
   const from = (env.RK_MAIL_FROM || '').trim();
   if (!from) return { mode: 'none' };
   if (!HEADER_SAFE.test(from)) throw new Error('RK_MAIL_FROM must be one line');
+  if (env.RK_BREVO_API_KEY) return { mode: 'brevo', from, apiKey: env.RK_BREVO_API_KEY.trim() };
   if (env.RK_SMTP_HOST) {
     const host = env.RK_SMTP_HOST.trim();
     if (!/^[a-z0-9.-]+$/i.test(host)) throw new Error('RK_SMTP_HOST must be a host name like smtp-relay.brevo.com');
@@ -47,6 +49,19 @@ export function createMailer(cfg = { mode: 'none' }, { fetch = globalThis.fetch,
         const envFrom = addressOf(cfg.from);
         if (!ADDRESS.test(envFrom)) throw new Error('RK_MAIL_FROM needs an email address');
         return await smtpSend(cfg, { from: envFrom, to }, msg);
+      }
+      if (cfg.mode === 'brevo') {
+        buildMessage({ from: cfg.from, to, subject, text }); // same header checks
+        const email = addressOf(cfg.from);
+        if (!ADDRESS.test(email)) throw new Error('RK_MAIL_FROM needs an email address');
+        const name = (/^\s*"?([^"<]+?)"?\s*</.exec(cfg.from)?.[1] || 'RecoverKit').trim();
+        const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST', headers: { 'api-key': cfg.apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ sender: { name, email }, to: [{ email: to }], subject, textContent: text }), signal: AbortSignal.timeout(15_000),
+        });
+        if (res.ok) return { ok: true };
+        const j = await res.json().catch(() => ({}));
+        return { ok: false, error: `brevo ${res.status}${j.message ? `: ${String(j.message).slice(0, 200)}` : ''}` };
       }
       if (cfg.mode === 'resend') {
         buildMessage({ from: cfg.from, to, subject, text }); // same header checks
