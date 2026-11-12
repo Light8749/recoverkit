@@ -344,6 +344,13 @@ final class RecoverKitConnector
         $pt = $tableOk($m['people']['table'] ?? '') ? $m['people']['table'] : '';
         $people = ['table' => $pt];
         foreach (['id', 'email', 'phone', 'firstName', 'createdAt'] as $k) $people[$k] = $has($pt, $m['people'][$k] ?? '');
+        // Optional: which people count at all, e.g. banned in [0] to leave out banned and deleted accounts.
+        $people['filters'] = [];
+        foreach (array_slice((array)($m['people']['filters'] ?? []), 0, 3) as $f) {
+            $c = $has($pt, $f['column'] ?? '');
+            $v = array_values(array_filter((array)($f['values'] ?? []), fn($x) => is_string($x) && strlen($x) <= 64));
+            if ($c && $v) $people['filters'][] = ['column' => $c, 'values' => array_slice($v, 0, 20)];
+        }
         $src = function ($s, $isSignal) use ($tableOk, $has) {
             $t = $s['table'] ?? '';
             if (!$tableOk($t)) return null;
@@ -411,6 +418,17 @@ final class RecoverKitConnector
         return [' FROM ' . $this->q($s['table']) . ' s' . $joins . ($where ? ' WHERE ' . implode(' AND ', $where) : ''), $expr];
     }
 
+    /** " AND col IN (?, ?) ..." for the people filters (empty when there are none). */
+    private function peopleWhere(array $p, array &$params, string $prefix = ''): string
+    {
+        $sql = '';
+        foreach ($p['filters'] ?? [] as $f) {
+            $sql .= ' AND ' . $prefix . $this->q($f['column']) . ' IN (' . implode(',', array_fill(0, count($f['values']), '?')) . ')';
+            foreach ($f['values'] as $v) $params[] = $v;
+        }
+        return $sql;
+    }
+
     private function asText(string $expr): string
     {
         return 'NULLIF(NULLIF(CAST(' . $expr . ' AS ' . ($this->driver === 'mysql' ? 'CHAR' : 'TEXT') . "), ''), '0')";
@@ -426,7 +444,8 @@ final class RecoverKitConnector
     private function describe(array $m): void
     {
         $p = $m['people'];
-        $this->say("  People:      table `{$p['table']}` (id `{$p['id']}`, email `" . ($p['email'] ?: '—') . "`, phone `" . ($p['phone'] ?: '—') . "`, signed up `" . ($p['createdAt'] ?: '—') . '`)');
+        $this->say("  People:      table `{$p['table']}` (id `{$p['id']}`, email `" . ($p['email'] ?: '—') . "`, phone `" . ($p['phone'] ?: '—') . "`, signed up `" . ($p['createdAt'] ?: '—') . '`)'
+            . ($p['filters'] ?? [] ? ' where ' . implode(' and ', array_map(fn($x) => "{$x['column']} is " . implode('/', $x['values']), $p['filters'])) : ''));
         $f = fn($s) => $s['filters'] ? ' where ' . implode(' and ', array_map(fn($x) => "{$x['column']} is " . implode('/', $x['values']), $s['filters'])) : ' (every row)';
         $who = function ($s) {
             $parts = [];
@@ -444,7 +463,8 @@ final class RecoverKitConnector
     private function dryRun(array $m): array
     {
         $p = $m['people'];
-        $out = ['people' => (int)$this->select('SELECT COUNT(*) AS n FROM ' . $this->q($p['table']))[0]['n'], 'buyers' => 0, 'guests' => 0, 'sales' => 0, 'signals' => []];
+        $pp = [];
+        $out = ['people' => (int)$this->select('SELECT COUNT(*) AS n FROM ' . $this->q($p['table']) . ' WHERE 1=1' . $this->peopleWhere($p, $pp), $pp)[0]['n'], 'buyers' => 0, 'guests' => 0, 'sales' => 0, 'signals' => []];
         $fields = ['u' => 'userColumn', 'e' => 'emailColumn', 'ph' => 'phoneColumn'];
         foreach ($m['conversions'] as $s) {
             $params = [];
@@ -579,8 +599,9 @@ final class RecoverKitConnector
         $cols = array_values(array_unique(array_filter([$p['id'], $p['email'], $p['phone'], $p['firstName'], $p['createdAt']])));
         $select = 'SELECT ' . implode(', ', array_map([$this, 'q'], $cols)) . ' FROM ' . $this->q($p['table']);
         $cursorKey = 'people';
-        $where = ''; $params = [];
-        if ($p['createdAt'] && isset($state[$cursorKey])) { $where = ' WHERE ' . $this->q($p['createdAt']) . ' >= ?'; $params[] = $this->cursor($p['table'], $p['createdAt'], $since($cursorKey)); }
+        $where = ' WHERE 1=1'; $params = [];
+        if ($p['createdAt'] && isset($state[$cursorKey])) { $where .= ' AND ' . $this->q($p['createdAt']) . ' >= ?'; $params[] = $this->cursor($p['table'], $p['createdAt'], $since($cursorKey)); }
+        $where .= $this->peopleWhere($p, $params);
         for ($offset = 0; ; $offset += self::PAGE) {
             $rows = $this->select($select . $where . ' ORDER BY ' . $this->q($p['id']) . ' LIMIT ' . self::PAGE . ' OFFSET ' . $offset, $params);
             foreach ($rows as $row) {
@@ -599,7 +620,9 @@ final class RecoverKitConnector
         $idsFor = function (array $userIds) use (&$peopleCache, $p, $cols): void {
             $missing = array_values(array_filter(array_unique($userIds), fn($u) => !array_key_exists((string)$u, $peopleCache)));
             foreach (array_chunk($missing, 500) as $chunk) {
-                $rows = $this->select('SELECT ' . implode(', ', array_map([$this, 'q'], $cols)) . ' FROM ' . $this->q($p['table']) . ' WHERE ' . $this->q($p['id']) . ' IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk);
+                // People left out by the filters stay unknown, so their sales and signals are skipped too.
+                $lp = $chunk;
+                $rows = $this->select('SELECT ' . implode(', ', array_map([$this, 'q'], $cols)) . ' FROM ' . $this->q($p['table']) . ' WHERE ' . $this->q($p['id']) . ' IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')' . $this->peopleWhere($p, $lp), $lp);
                 foreach ($rows as $row) $peopleCache[(string)$row[$p['id']]] = $this->hasher()->hashes(['email' => $p['email'] ? $row[$p['email']] : null, 'phone' => $p['phone'] ? $row[$p['phone']] : null]);
                 foreach ($chunk as $u) if (!array_key_exists((string)$u, $peopleCache)) $peopleCache[(string)$u] = [];
             }
