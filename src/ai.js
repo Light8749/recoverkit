@@ -64,7 +64,8 @@ export function validateAiSettings(input) {
     let u;
     try { u = new URL(raw); } catch { throw new Error('enter the API base URL, e.g. https://api.groq.com/openai/v1'); }
     if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw new Error('base URL must be a plain http(s) URL');
-    out.baseUrl = u.origin + u.pathname.replace(/\/+$/, '');
+    // People often paste the full endpoint; RecoverKit adds /chat/completions itself.
+    out.baseUrl = u.origin + u.pathname.replace(/\/+$/, '').replace(/\/(chat\/completions|completions|responses)$/i, '');
   }
   return out;
 }

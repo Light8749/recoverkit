@@ -161,3 +161,9 @@ test('drafter falls back to templates when the model fails, and test() reports t
   assert.equal(t.ok, false);
   assert.match(t.error, /401/);
 });
+
+test('AI base URL: a pasted full endpoint is trimmed to the base', async () => {
+  const { validateAiSettings } = await import('../src/ai.js');
+  const v = validateAiSettings({ provider: 'openai-compatible', model: 'llama-3.3-70b-versatile', apiKey: 'gsk_x', baseUrl: 'https://api.groq.com/openai/v1/chat/completions/' });
+  assert.equal(v.baseUrl, 'https://api.groq.com/openai/v1');
+});
