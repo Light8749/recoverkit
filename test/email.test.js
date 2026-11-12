@@ -47,8 +47,11 @@ test('each API gets the right request, with the unsubscribe header', async () =>
     const raw = rec.calls[0].init.body;
     check(provider === 'mailgun' ? null : JSON.parse(raw), rec.calls[0].init.headers, raw);
   }
-  const bad = recorder(401, { message: 'unauthorized' });
-  assert.deepEqual(await sendEmail({ provider: 'sendgrid', from: 'hi@padi.ng', apiKey: 'KEY12345678' }, MSG, { fetch: bad.fetch }), { ok: false, error: 'sendgrid 401' });
+  const bad = recorder(401, { errors: [{ message: 'The provided authorization grant is invalid' }] });
+  assert.deepEqual(await sendEmail({ provider: 'sendgrid', from: 'hi@padi.ng', apiKey: 'KEY12345678' }, MSG, { fetch: bad.fetch }), { ok: false, error: 'sendgrid 401: The provided authorization grant is invalid' });
+  const resend = recorder(403, { statusCode: 403, message: 'The padi.ng domain is not verified. Please, add and verify your domain on https://resend.com/domains', name: 'validation_error' });
+  const r403 = await sendEmail({ provider: 'resend', from: 'hi@padi.ng', apiKey: 're_secretkey123456' }, MSG, { fetch: resend.fetch });
+  assert.match(r403.error, /^resend 403: The padi\.ng domain is not verified/);
 });
 
 test('SMTP: sends through the business\'s mail server, but never to a private or local address', async () => {

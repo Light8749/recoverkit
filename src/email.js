@@ -87,19 +87,28 @@ export async function sendEmail(cfg, msg, { fetch = globalThis.fetch, resolver, 
   const subject = String(msg.subject || 'A quick note').replace(/[\r\n]+/g, ' ').slice(0, 200);
   const text = `${msg.body}\n\n${msg.unsubscribeText || ''}`.trim();
   const unsub = msg.unsubscribeUrl ? { 'List-Unsubscribe': `<${msg.unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' } : {};
-  const ok = (status, id) => (status < 300 ? { ok: true, id } : { ok: false, error: `${cfg.provider || 'resend'} ${status}` });
+  // On failure, include the provider's own reason (e.g. "domain is not verified"), with anything key-like removed.
+  let lastBody = {};
+  const reason = (b) => {
+    const m = b?.message || b?.error?.message || (typeof b?.error === 'string' ? b.error : '') || b?.errors?.[0]?.message || b?.Message || '';
+    return String(m).replace(/\b(re|xkeysib|SG|key)[-_.][A-Za-z0-9_.-]{6,}/g, '[key]').replace(/[A-Za-z0-9_-]{32,}/g, '…').replace(/\s+/g, ' ').trim().slice(0, 200);
+  };
+  const ok = (status, id) => (status < 300 ? { ok: true, id } : { ok: false, error: `${cfg.provider || 'resend'} ${status}${reason(lastBody) ? `: ${reason(lastBody)}` : ''}` });
   switch (cfg.provider || 'resend') {
     case 'resend': {
       const r = await post(fetch, 'https://api.resend.com/emails', { headers: { Authorization: `Bearer ${cfg.apiKey}` }, json: { from: cfg.from, to: [msg.to], subject, text, headers: unsub } });
+      lastBody = r.body;
       return ok(r.status, r.body.id);
     }
     case 'brevo': {
       const r = await post(fetch, 'https://api.brevo.com/v3/smtp/email', { headers: { 'api-key': cfg.apiKey }, json: { sender: { name: from.name || from.email, email: from.email }, to: [{ email: msg.to }], subject, textContent: text, headers: unsub } });
+      lastBody = r.body;
       return ok(r.status, r.body.messageId);
     }
     case 'sendgrid': {
       const r = await post(fetch, 'https://api.sendgrid.com/v3/mail/send', { headers: { Authorization: `Bearer ${cfg.apiKey}` },
         json: { personalizations: [{ to: [{ email: msg.to }] }], from: { email: from.email, ...(from.name ? { name: from.name } : {}) }, subject, content: [{ type: 'text/plain', value: text }], headers: unsub } });
+      lastBody = r.body;
       return ok(r.status);
     }
     case 'mailgun': {
@@ -108,11 +117,13 @@ export async function sendEmail(cfg, msg, { fetch = globalThis.fetch, resolver, 
         headers: { Authorization: `Basic ${Buffer.from(`api:${cfg.apiKey}`).toString('base64')}` },
         form: { from: cfg.from, to: msg.to, subject, text, ...Object.fromEntries(Object.entries(unsub).map(([k, v]) => [`h:${k}`, v])) },
       });
+      lastBody = r.body;
       return ok(r.status, r.body.id);
     }
     case 'postmark': {
       const r = await post(fetch, 'https://api.postmarkapp.com/email', { headers: { 'X-Postmark-Server-Token': cfg.apiKey },
         json: { From: cfg.from, To: msg.to, Subject: subject, TextBody: text, MessageStream: 'outbound', Headers: Object.entries(unsub).map(([Name, Value]) => ({ Name, Value })) } });
+      lastBody = r.body;
       return ok(r.status, r.body.MessageID);
     }
     case 'smtp': {
