@@ -268,6 +268,8 @@ final class RecoverKitConnector
             if ($t['name'] === $people['name']) continue;
             // Summary and helper tables repeat the same orders (e.g. WooCommerce wc_order_stats): never count them as sales.
             if (preg_match('/(_stats|_lookup|_meta|meta|_logs?|_items?|_notes?|_history|_audit)$/i', $t['name'])) continue;
+            // Files, media, queues and scratch tables are never sales or deposits.
+            if (preg_match('/(^|_)(uploads?|temp|tmp|media|files?|images?|photos?|attachments?|queues?|jobs?|cache|sessions?|tokens?|otps?|verifications?|notifications?|messages?|chats?)(_|$)/i', $t['name'])) continue;
             $user = self::findCol($t, $userPat);
             $time = self::findCol($t, $timePat);
             if (!$user || !$time) continue;
@@ -294,7 +296,7 @@ final class RecoverKitConnector
                 'userColumn' => $user, 'timeColumn' => $time, 'amountColumn' => $amount, 'amountUnit' => $unit, 'filters' => $filters,
                 // Guest checkouts: the email/phone typed on the order itself.
                 'emailColumn' => self::findCol($t, ['/^(billing_|customer_|buyer_)?e-?mail$/i']), 'phoneColumn' => self::findCol($t, ['/^(billing_|customer_|buyer_)?(phone|mobile|msisdn)$/i'])];
-            if (preg_match('/wallet|fund|deposit|top_?up|credit|load/i', $t['name'])) {
+            if ($amount && preg_match('/(^|_)(wallets?|funds?|funding|deposits?|top_?ups?|credits?|wallet_loads?)(_|$)/i', $t['name'])) {
                 $mapping['signals'][] = $base + ['kind' => 'deposit'];
             } elseif (preg_match('/cart|checkout|pending|basket/i', $t['name'])) {
                 $mapping['signals'][] = $base + ['kind' => 'checkout'];
@@ -355,7 +357,8 @@ final class RecoverKitConnector
         $out = ['sale' => [], 'deposit' => []];
         foreach ($values as $v) {
             $s = strtolower((string)$v);
-            if (preg_match('/withdraw|payout|pay_out|commission|refund|revers|reward|bonus|cashback|transfer|charge|fee|earning|settle|adjust|debit_note|referral|interest|penalt|chargeback/', $s)) continue;
+            // Money the business pays out or a user receives (income, payouts, refunds...) is never a purchase.
+            if (preg_match('/withdraw|payout|pay_out|commission|refund|revers|reward|bonus|cashback|transfer|charge|fee|earning|income|revenue|received|incoming|settle|adjust|debit_note|referral|interest|penalt|chargeback|salary|dividend/', $s)) continue;
             if (preg_match('/deposit|fund|top.?up|wallet.?(credit|load)|virtual.?account|^credit$|load.?wallet|add.?money/', $s)) { $out['deposit'][] = $v; continue; }
             if (preg_match('/purchase|payment|subscri|airtime|\bdata\b|bill|cable|electric|recharge|order|\bbet|stake|rent|ticket|\bpin\b|token|\bbuy|sale|booking|exam|education|tv\b|vtu|bundle|insurance|loan_repay|plan/', $s)) $out['sale'][] = $v;
         }

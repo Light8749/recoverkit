@@ -37,7 +37,9 @@ before(async () => {
   db.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, api_key TEXT, first_name TEXT NOT NULL, email TEXT NOT NULL, phone_number TEXT NOT NULL,
     banned TINYINT NOT NULL DEFAULT 0, wallet_balance DECIMAL(10,2) NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
     CREATE TABLE wallet_transactions (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, transaction_type VARCHAR(100) NOT NULL, amount DECIMAL(10,2) NOT NULL,
-    transaction_reference VARCHAR(255), status VARCHAR(20) DEFAULT 'pending', created_at TEXT NOT NULL);`);
+    transaction_reference VARCHAR(255), status VARCHAR(20) DEFAULT 'pending', created_at TEXT NOT NULL);
+    CREATE TABLE vacancy_temp_uploads (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, file_path TEXT, created_at TEXT NOT NULL);
+    INSERT INTO vacancy_temp_uploads (user_id, file_path, created_at) VALUES (3, 'a.jpg', '2026-01-01 10:00:00');`);
   const u = db.prepare('INSERT INTO users (id, api_key, first_name, email, phone_number, banned, created_at) VALUES (?,?,?,?,?,?,?)');
   u.run(1, 'k1', 'Ada', 'ada@x.ng', '08031110001', 0, iso(40));
   u.run(2, 'k2', 'Bola', 'bola@x.ng', '08031110002', 0, iso(35));
@@ -52,6 +54,7 @@ before(async () => {
   t.run(4, 'deposit', 2000, 'DEP-4', 'completed', iso(16));
   t.run(5, 'Withdrawal', 500, 'WD-5', 'completed', iso(15));
   t.run(5, 'Agent Commission', 200, 'AC-5', 'completed', iso(14));
+  t.run(3, 'Rental Income', 90000, 'RI-3', 'completed', iso(13)); // a landlord receiving rent: not a purchase
   db.close();
   writeFileSync(join(appDir, '.env'), `DB_CONNECTION=sqlite\nDB_NAME=${dbFile}\nAPP_NAME=padi\n`);
 });
@@ -83,7 +86,10 @@ test('one command: create the code, download the installer, run it, customers ar
   assert.match(r.out, /A SALE is:   a row in `wallet_transactions` where status is completed and transaction_type is Data Purchase/);
   assert.match(r.out, /Not a sale:  `wallet_transactions` where status is completed and transaction_type is deposit → deposit/);
   assert.match(r.out, /4 people · 1 have bought \(1 sales\) · 3 never bought/);
+  assert.equal((r.out.match(/people funded their wallet/g) || []).length, 1, 'one deposit source only');
   assert.match(r.out, /3 people funded their wallet/);
+  assert.ok(!/vacancy_temp_uploads/.test(r.out), 'an uploads table is never a sale or deposit');
+  assert.ok(!/Rental Income/.test(r.out), 'income is never a purchase');
   assert.match(r.out, /Done\. Open your RecoverKit dashboard/);
   assert.match(r.out, /cron job/i);
 
