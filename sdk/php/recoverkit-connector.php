@@ -31,7 +31,7 @@ require_once __DIR__ . '/recoverkit-detect.php';
 
 final class RecoverKitConnector
 {
-    public const VERSION = '1.1.0';
+    public const VERSION = '1.1.4';
     private const NAME_RE = '/^[A-Za-z_][A-Za-z0-9_$]{0,63}$/';
     private const META_KEY_RE = '/^[A-Za-z0-9_-]{1,64}$/';
     private const PAGE = 1000;

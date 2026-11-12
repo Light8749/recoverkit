@@ -54,7 +54,9 @@ final class RecoverKit
     public static function normalizeEmail($input): ?string
     {
         if (!is_string($input)) return null;
-        $e = mb_strtolower(trim($input), 'UTF-8');
+        // mbstring is optional: many hosts' command-line PHP doesn't have it. Without it only A-Z are
+        // lower-cased, which gives the same hash as the JavaScript SDKs for every ASCII email address.
+        $e = function_exists('mb_strtolower') ? mb_strtolower(trim($input), 'UTF-8') : strtolower(trim($input));
         if (strlen($e) > 254 || !preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]+$/u', $e)) return null;
         return $e;
     }
