@@ -31,7 +31,7 @@ require_once __DIR__ . '/recoverkit-detect.php';
 
 final class RecoverKitConnector
 {
-    public const VERSION = '1.0.0';
+    public const VERSION = '1.1.0';
     private const NAME_RE = '/^[A-Za-z_][A-Za-z0-9_$]{0,63}$/';
     private const META_KEY_RE = '/^[A-Za-z0-9_-]{1,64}$/';
     private const PAGE = 1000;
@@ -113,7 +113,12 @@ final class RecoverKitConnector
         try {
             $this->pdo = new PDO($dsn, $this->env['RK_DB_USER'] ?? null, $this->env['RK_DB_PASS'] ?? null, $opts);
         } catch (PDOException $e) {
-            $this->fail('could not connect to the database: ' . $e->getMessage());
+            // "localhost" makes MySQL use a socket file; when there is none, try the same server over TCP.
+            if ($this->driver === 'mysql' && strpos($e->getMessage(), '[2002]') !== false && preg_match('/host=localhost\b/', $dsn)) {
+                try { $this->pdo = new PDO(preg_replace('/host=localhost\b/', 'host=127.0.0.1', $dsn), $this->env['RK_DB_USER'] ?? null, $this->env['RK_DB_PASS'] ?? null, $opts); }
+                catch (PDOException $e2) { $e = $e2; }
+            }
+            if (!$this->pdo) $this->fail('could not connect to the database: ' . $e->getMessage() . "\n  Run this on the server where the app and its database live (for cPanel: the cPanel Terminal), not on your own computer.");
         }
         // Belt and braces: even if the login could write, this session cannot.
         if ($this->driver === 'mysql') $this->pdo->exec('SET SESSION TRANSACTION READ ONLY');
@@ -528,6 +533,9 @@ final class RecoverKitConnector
 
     // ------------------------------------------------------------------ commands
 
+    /** Connect and check the database works (used by install before the one-time code is spent). */
+    public function checkDatabase(): void { $this->connect(); $this->say('✓ Connected to your database (read-only).'); }
+
     public function setup(bool $useAi, bool $auto = false): void
     {
         $this->say('RecoverKit Connector ' . self::VERSION . ' — setup');
@@ -861,6 +869,19 @@ if (PHP_SAPI === 'cli' && (realpath($argv[0] ?? '') === __FILE__ || defined('REC
         if (!preg_match('#^https?://#', $endpoint)) $die('--endpoint is missing');
         $root = realpath($root ?? getcwd()) ?: getcwd();
         $say('RecoverKit installer');
+        // Check the database first, so a wrong folder or a missing database doesn't use up the one-time code.
+        $dbEnv = $env;
+        $dotenv0 = RecoverKitDetect::readDotenv("$root/.env");
+        foreach (['RK_DB_DSN', 'RK_DB_USER', 'RK_DB_PASS'] as $k) if (!isset($dbEnv[$k]) && isset($dotenv0[$k])) $dbEnv[$k] = $dotenv0[$k];
+        if (!isset($dbEnv['RK_DB_DSN'])) {
+            $found = RecoverKitDetect::detect($root, $dbEnv);
+            if (isset($found['error'])) $die($found['error'] . "\n  Run this in your app's folder (the one with its .env or config files), on the server where it runs.");
+            $dbEnv['RK_DB_DSN'] = $found['dsn'];
+            if (!isset($dbEnv['RK_DB_USER'])) $dbEnv['RK_DB_USER'] = (string)($found['user'] ?? '');
+            if (!isset($dbEnv['RK_DB_PASS'])) $dbEnv['RK_DB_PASS'] = (string)($found['pass'] ?? '');
+            $say(sprintf('Found your database in %s (%s): %s', $found['source'], $found['framework'], preg_replace('/password=[^;]*/i', 'password=***', $found['dsn'])));
+        }
+        (new RecoverKitConnector($dbEnv, sys_get_temp_dir(), true))->checkDatabase();
         $say('Connecting to ' . $endpoint . '...');
         try { $keys = RecoverKitConnector::claim($endpoint, $code); } catch (Throwable $e) { $die($e->getMessage()); }
         $say('✓ Connected to ' . ($keys['projectName'] ?? 'your business') . '.');
@@ -899,7 +920,7 @@ if (PHP_SAPI === 'cli' && (realpath($argv[0] ?? '') === __FILE__ || defined('REC
             // A dedicated read-only login (RK_DB_USER / RK_DB_PASS) always wins over the app's own login.
             if (!isset($env['RK_DB_USER'])) $env['RK_DB_USER'] = (string)($found['user'] ?? '');
             if (!isset($env['RK_DB_PASS'])) $env['RK_DB_PASS'] = (string)($found['pass'] ?? '');
-            if ($cmd !== 'sync') $say(sprintf('Found your database in %s (%s): %s%s', $found['source'], $found['framework'], preg_replace('/password=[^;]*/i', 'password=***', $found['dsn']),
+            if ($cmd !== 'sync' && $cmd !== 'install') $say(sprintf('Found your database in %s (%s): %s%s', $found['source'], $found['framework'], preg_replace('/password=[^;]*/i', 'password=***', $found['dsn']),
                 isset($found['tablePrefix']) ? " · table prefix {$found['tablePrefix']}" : ''));
         }
     }

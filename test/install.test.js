@@ -125,6 +125,21 @@ test('one command: create the code, download the installer, run it, customers ar
   assert.match((await reuse.json()).error, /expired or was already used/);
 });
 
+test('run where the database can\'t be reached: it stops before using the code', async () => {
+  const wrong = join(dir, 'laptop-copy'); mkdirSync(wrong);
+  writeFileSync(join(wrong, '.env'), 'DB_HOST=127.0.0.1\nDB_PORT=1\nDB_NAME=padi_connect\nDB_USER=root\nDB_PASS=x\n');
+  const { createInstall } = await import('../src/install.js');
+  const inst = createInstall({ db: app.db, config: { publicUrl: base }, projects: app.projects, limiter: app.limiter });
+  const code = inst.createCode(project.id, 'test');
+  writeFileSync(join(wrong, 'recoverkit-install.php'), await (await fetch(base + '/install.php')).text());
+  const r = await run(['recoverkit-install.php', code, '--yes', '--no-cron'], wrong);
+  assert.notEqual(r.code, 0);
+  assert.match(r.out, /could not connect to the database/);
+  assert.match(r.out, /on the server where the app and its database live/);
+  assert.ok(!/Connected to PadiConnect/.test(r.out), 'the code was not used');
+  assert.equal(app.db.get('SELECT used_at FROM install_codes WHERE used_at IS NULL AND expires_at > ? LIMIT 1', Date.now()) !== undefined, true, 'still usable');
+});
+
 test('install codes expire, and bad codes are refused and rate limited', async () => {
   const code = 'ABCD-EFGH-JKMN';
   const claim = (c) => fetch(base + '/v1/connector/claim', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: c }) });
