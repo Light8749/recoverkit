@@ -77,7 +77,8 @@ export function createScheduler({ db, config, projects, outreach, mailer, logger
   }
 
   async function tick({ now = Date.now() } = {}) {
-    if (!lease('tick', 10 * 60e3, now)) return { skipped: 'another run is in progress' };
+    // 30 minutes: drafting on a free AI plan can be slow (each draft waits for the rate limit).
+    if (!lease('tick', 30 * 60e3, now)) return { skipped: 'another run is in progress' };
     const out = { drafted: 0, sent: 0, failed: 0, emails: 0, errors: 0 };
     try {
       for (const p of db.all('SELECT * FROM projects')) {

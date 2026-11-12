@@ -130,12 +130,32 @@ export async function assertSafeUrl(url, allowPrivate, resolver = lookup) {
   if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) throw new Error('AI base URL points to a private network address');
 }
 
-async function postJson(fetchFn, url, headers, body) {
-  const res = await fetchFn(url, {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60_000),
-    headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
-  });
-  const text = await res.text();
+/** How long a 429 asks us to wait, in ms: the Retry-After header, or "try again in 1.2s" in the message. */
+export function retryDelay(res, text) {
+  const raw = res.headers?.get?.('retry-after');
+  const h = raw === null || raw === undefined || raw === '' ? NaN : Number(raw);
+  if (Number.isFinite(h) && h >= 0) return h * 1000;
+  const m = /try again in\s+(?:(\d+)m)?\s*([\d.]+)\s*(ms|s)\b/i.exec(text || '');
+  if (m) return (Number(m[1] || 0) * 60 + (m[3].toLowerCase() === 'ms' ? Number(m[2]) / 1000 : Number(m[2]))) * 1000;
+  return 2000;
+}
+const MAX_WAIT_MS = 30_000;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function postJson(fetchFn, url, headers, body, { sleep = wait, retries = 3 } = {}) {
+  let res; let text;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetchFn(url, {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(60_000),
+      headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
+    });
+    text = await res.text();
+    // Free plans (Groq, Gemini...) limit tokens per minute: wait as long as the provider asks, then try again.
+    if (res.status !== 429 || attempt >= retries) break;
+    const ms = Math.min(retryDelay(res, text) + 250, MAX_WAIT_MS);
+    if (retryDelay(res, text) > MAX_WAIT_MS) break; // a daily limit, not worth waiting for
+    await sleep(ms);
+  }
   if (text.length > MAX_RESPONSE) throw new Error('AI response too large');
   if (!res.ok) {
     // Include the provider's own reason (e.g. "model does not exist"), cleaned so no key or token can show.
@@ -199,7 +219,7 @@ async function callOpenAiStyle(settings, { system, user, schema = DRAFT_SCHEMA, 
     response_format: strictSchema
       ? { type: 'json_schema', json_schema: { name, strict: true, schema } }
       : { type: 'json_object' },
-  });
+  }, { sleep: deps.sleep });
   const msg = json?.choices?.[0]?.message;
   if (msg?.refusal) throw new Error('model declined');
   if (json?.choices?.[0]?.finish_reason === 'length') throw new Error('model output truncated');
@@ -212,7 +232,7 @@ async function callGemini(settings, { system, user, schema = DRAFT_SCHEMA }, dep
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: user }] }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: geminiSchema(schema) },
-  });
+  }, { sleep: deps.sleep });
   const cand = json?.candidates?.[0];
   if (!cand || cand.finishReason === 'SAFETY') throw new Error('model declined');
   return parseModelJson((cand.content?.parts || []).map((p) => p.text || '').join(''));
@@ -336,5 +356,8 @@ export function createDrafter({ resolveAi, logger = console, ...deps }) {
     }
   }
 
-  return { draft, test };
+  /** How many drafts to ask for at once: small free plans (Groq, Gemini, other compatible APIs) get one at a time. */
+  const concurrency = (project) => (['openai-compatible', 'gemini'].includes(resolveAi(project)?.provider) ? 1 : 4);
+
+  return { draft, test, concurrency };
 }

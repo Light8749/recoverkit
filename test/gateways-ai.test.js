@@ -177,3 +177,39 @@ test('AI errors include the provider\'s reason, never a key', async () => {
   assert.match(r.error, /HTTP 404: The model `?llama-old`? does not exist/);
   assert.ok(!/gsk_abcdef/.test(r.error), 'keys are hidden');
 });
+
+test('rate limits: wait as long as the provider asks, then retry; give up on long (daily) limits', async () => {
+  const { retryDelay, createDrafter } = await import('../src/ai.js');
+  const groq = 'Rate limit reached for model openai/gpt-oss-120b on tokens per minute (TPM): Limit 8000, Used 7986, Requested 1200. Please try again in 8.9s.';
+  assert.equal(retryDelay({ headers: new Headers() }, groq), 8900);
+  assert.equal(retryDelay({ headers: new Headers({ 'retry-after': '3' }) }, ''), 3000);
+  assert.equal(retryDelay({ headers: new Headers() }, 'try again in 1m30s'), 90000);
+  assert.equal(retryDelay({ headers: new Headers() }, 'try again in 450ms'), 450);
+
+  let calls = 0; const waits = [];
+  const fetch = async () => (++calls < 3
+    ? new Response(JSON.stringify({ error: { message: `${groq}` } }), { status: 429 })
+    : new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ message: 'Hi {first_name}, did something go wrong with the top-up?', tactic: 'question', send: true }) } }] }), { status: 200 }));
+  const d = createDrafter({ resolveAi: () => null, logger: { warn() {} }, fetch, resolver: async () => [{ address: '8.8.8.8' }], sleep: async (ms) => { waits.push(ms); } });
+  const r = await d.test({ name: 'Padi', voice_profile: '' }, { provider: 'openai-compatible', model: 'm', apiKey: 'gsk_x', baseUrl: 'https://api.groq.com/openai/v1' });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [9150, 9150]);
+
+  calls = 0; waits.length = 0;
+  const daily = async () => { calls++; return new Response(JSON.stringify({ error: { message: 'Rate limit reached on requests per day (RPD). Please try again in 7m12s.' } }), { status: 429 }); };
+  const d2 = createDrafter({ resolveAi: () => null, logger: { warn() {} }, fetch: daily, resolver: async () => [{ address: '8.8.8.8' }], sleep: async (ms) => { waits.push(ms); } });
+  const r2 = await d2.test({ name: 'Padi', voice_profile: '' }, { provider: 'openai-compatible', model: 'm', apiKey: 'gsk_x', baseUrl: 'https://api.groq.com/openai/v1' });
+  assert.equal(r2.ok, false);
+  assert.equal(calls, 1, 'no point waiting 7 minutes');
+  assert.match(r2.error, /HTTP 429/);
+});
+
+test('small free AI plans are asked one draft at a time; others four', async () => {
+  const { createDrafter } = await import('../src/ai.js');
+  const forProvider = (provider) => createDrafter({ resolveAi: () => ({ provider }), logger: {} }).concurrency({});
+  assert.equal(forProvider('openai-compatible'), 1);
+  assert.equal(forProvider('gemini'), 1);
+  assert.equal(forProvider('anthropic'), 4);
+  assert.equal(forProvider('openai'), 4);
+});

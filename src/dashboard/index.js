@@ -685,9 +685,17 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
   async function draftsAction(req, res) {
     const { ctx } = await postCtx(req);
     if (!limiter.hit(`drafts:${ctx.project.id}`, 10, 60 * 60e3)) return back(res, '/dashboard/leads', null, 'Draft limit reached, try again later.');
-    const r = await outreach.generateDrafts(ctx.project.id, { limit: 20 });
-    const extra = r.noContact ? ` ${r.noContact} lead${r.noContact === 1 ? ' has' : 's have'} no contact details, or no channel is set up for them.` : '';
-    back(res, '/dashboard/messages', `Drafted ${r.drafted}.${r.skipped ? ` Skipped ${r.skipped}.` : ''}${extra}`);
+    if (outreach.isDrafting(ctx.project.id)) return back(res, '/dashboard/messages', 'Already drafting. New drafts appear here as they\'re written: refresh in a minute.');
+    // Drafting can take a minute or two on a free AI plan, so it runs in the background and each draft
+    // shows up under Waiting as soon as it's written.
+    const run = outreach.generateDrafts(ctx.project.id, { limit: 20 });
+    const quick = await Promise.race([run, new Promise((r) => setTimeout(() => r(null), 8000))]);
+    if (!quick) {
+      run.catch((e) => logger?.warn?.(`[drafts] ${e.message}`));
+      return back(res, '/dashboard/messages', 'Drafting up to 20 follow-ups now. They appear here one by one: refresh in a minute.');
+    }
+    const extra = quick.noContact ? ` ${quick.noContact} lead${quick.noContact === 1 ? ' has' : 's have'} no contact details, or no channel is set up for them.` : '';
+    back(res, '/dashboard/messages', `Drafted ${quick.drafted}.${quick.skipped ? ` Skipped ${quick.skipped}.` : ''}${extra}`);
   }
 
   async function replyAction(req, res, params) {

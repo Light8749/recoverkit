@@ -9,7 +9,16 @@ export function createOutreach({ db, keys, config, projects, people, engine, dra
   const unsubscribeUrl = (projectId, personId) =>
     `${config.publicUrl}/u/${signToken(keys.sign, { p: projectId, u: personId }, 365 * 86400)}`;
 
-  async function generateDrafts(projectId, { limit = 20, now = Date.now() } = {}) {
+  const drafting = new Set(); // businesses with a drafting run in progress in this process
+
+  async function generateDrafts(projectId, opts = {}) {
+    if (drafting.has(projectId)) return { drafted: 0, skipped: 0, noContact: 0, busy: true };
+    drafting.add(projectId);
+    try { return await runDrafts(projectId, opts); } finally { drafting.delete(projectId); }
+  }
+  const isDrafting = (projectId) => drafting.has(projectId);
+
+  async function runDrafts(projectId, { limit = 20, now = Date.now() } = {}) {
     const project = projects.byId(projectId);
     const channels = projects.getChannels(project);
     const result = { drafted: 0, skipped: 0, noContact: 0 };
@@ -20,13 +29,12 @@ export function createOutreach({ db, keys, config, projects, people, engine, dra
       if (!route) { result.noContact++; continue; }
       jobs.push({ lead, contact, route });
     }
-    // Draft up to 4 at a time; write results in rank order.
-    const drafts = [];
-    for (let i = 0; i < jobs.length; i += 4) {
-      drafts.push(...await Promise.all(jobs.slice(i, i + 4).map((j) => drafter.draft({ lead: j.lead, project, channel: j.route.channel, contact: j.contact }))));
-    }
-    for (const [i, { lead, route }] of jobs.entries()) {
-      const d = drafts[i];
+    // Draft a few at a time (one at a time on small free AI plans), saving each batch as soon as it's
+    // written, so a slow run can never draft the same person twice.
+    const size = drafter.concurrency ? drafter.concurrency(project) : 4;
+    const pending = (personId) => db.get("SELECT 1 FROM messages WHERE project_id = ? AND person_id = ? AND status IN ('draft','approved')", projectId, personId);
+    const save = ({ lead, route }, d) => {
+      if (pending(lead.personId)) return; // drafted by another run while this one was waiting on the AI
       const status = !d.send ? 'skipped' : project.require_approval ? 'draft' : 'approved';
       db.run(
         `INSERT INTO messages (id, project_id, person_id, lead_type, channel, body, tactic, score, confidence, status, status_reason, drafted_by, created_at)
@@ -35,6 +43,13 @@ export function createOutreach({ db, keys, config, projects, people, engine, dra
         lead.score, lead.confidence, status, d.send ? '' : 'drafter advised not to send', d.draftedBy, now,
       );
       if (status === 'skipped') result.skipped++; else result.drafted++;
+    };
+    for (let i = 0; i < jobs.length; i += size) {
+      const batch = jobs.slice(i, i + size);
+      // Someone may have been drafted meanwhile (another run, or a click): skip them.
+      const fresh = batch.filter((j) => !pending(j.lead.personId));
+      const drafts = await Promise.all(fresh.map((j) => drafter.draft({ lead: j.lead, project, channel: j.route.channel, contact: j.contact })));
+      fresh.forEach((j, k) => save(j, drafts[k]));
     }
     projects.audit(projectId, 'system', 'drafts_generated', JSON.stringify(result));
     return result;
@@ -125,5 +140,5 @@ export function createOutreach({ db, keys, config, projects, people, engine, dra
     return true;
   }
 
-  return { generateDrafts, approve, reject, sendApproved, unsubscribe, unsubscribeUrl };
+  return { generateDrafts, isDrafting, approve, reject, sendApproved, unsubscribe, unsubscribeUrl };
 }

@@ -116,3 +116,11 @@ test('a lease stops two runs at once (cron and the app)', async () => {
   assert.ok(!(await app.scheduler.tick({ now })).skipped);
   assert.ok(app.scheduler.lastRun().last_run > 0);
 });
+
+test('two drafting runs for the same business never overlap', async () => {
+  addLead('overlap@x.ng', 'Ola');
+  const [a, b] = await Promise.all([app.outreach.generateDrafts(p.id, { now: T10 + 9 * DAY }), app.outreach.generateDrafts(p.id, { now: T10 + 9 * DAY })]);
+  assert.ok(a.busy || b.busy, 'the second run is turned away');
+  const pid = app.people.findByHashes(p.id, identityHashes(p.publicKey, { email: 'overlap@x.ng' }));
+  assert.equal(app.db.get("SELECT COUNT(*) n FROM messages WHERE person_id = ? AND status IN ('draft','approved')", pid).n, 1, 'drafted once');
+});
