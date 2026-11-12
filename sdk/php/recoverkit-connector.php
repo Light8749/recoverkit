@@ -349,6 +349,43 @@ final class RecoverKitConnector
     }
 
     /**
+     * The same safety rules for any suggested mapping (from an AI model or a person): only successful rows
+     * count, banned/deleted accounts are left out, type lists are re-sorted into purchases and deposits,
+     * and nothing in the people table itself is treated as activity.
+     */
+    public static function harden(array $m, array $tables): array
+    {
+        $by = [];
+        foreach ($tables as $t) $by[$t['name']] = $t;
+        $guess = self::guessMapping($tables);
+        if ($m['people']['table'] && $m['people']['table'] === $guess['people']['table'] && empty($m['people']['filters'])) $m['people']['filters'] = $guess['people']['filters'];
+        $fix = function (array $s, ?string $want) use ($by) {
+            $t = $by[$s['table']] ?? null;
+            if (!$t) return $s;
+            $cols = array_column($s['filters'], 'column');
+            $status = self::findCol($t, ['/^(status|state|payment_status|transaction_status)$/i']);
+            if ($status && !in_array($status, $cols, true) && ($ok = self::successValues($t, $status))) $s['filters'][] = ['column' => $status, 'values' => $ok];
+            if ($want) {
+                $typeCol = self::findCol($t, ['/^(transaction_type|txn_type|trans_type|tx_type|type|kind|category|service_type|service|purpose|narration_type)$/i']);
+                if ($typeCol && !empty($t['values'][$typeCol])) {
+                    $kinds = self::classifyTypes($t['values'][$typeCol]);
+                    $s['filters'] = array_values(array_filter($s['filters'], fn($f) => $f['column'] !== $typeCol));
+                    if ($kinds[$want]) $s['filters'][] = ['column' => $typeCol, 'values' => array_slice($kinds[$want], 0, 20), 'auto' => $want];
+                    else return null; // nothing in this table is that kind of row
+                }
+            }
+            return $s;
+        };
+        $m['conversions'] = array_values(array_filter(array_map(fn($s) => $fix($s, 'sale'), $m['conversions'])));
+        $m['signals'] = array_values(array_filter(array_map(function ($s) use ($fix, $m) {
+            if ($s['table'] === $m['people']['table']) return null; // a sign-up is not a login or a purchase
+            return $fix($s, $s['kind'] === 'deposit' ? 'deposit' : null);
+        }, $m['signals'])));
+        $m['notes'] = 'Suggested by your AI model from table and column names, then checked by RecoverKit\'s rules: only completed rows count, purchases and deposits are sorted by their type, and banned or deleted accounts are left out.';
+        return $m;
+    }
+
+    /**
      * Sort a ledger's type labels: real purchases, wallet deposits, and everything else (withdrawals,
      * payouts, commissions, refunds, rewards, transfers, fees), which is neither and is left out.
      */
@@ -559,7 +596,7 @@ final class RecoverKitConnector
         if (!$mapping && $useAi && ($auto || $this->ask('Ask your AI model to suggest the mapping? It will see table names, column names and status values like "successful", never customer data.'))) {
             $this->say('Asking...');
             $s = $this->suggestMapping($tables);
-            if ($s) $mapping = self::checkMapping($s, $tables);
+            if ($s) $mapping = self::harden(self::checkMapping($s, $tables), $tables);
         }
         if (!$mapping || !$mapping['people']['table']) $mapping = self::checkMapping(self::guessMapping($tables), $tables);
         if (!$mapping['people']['table'] || !$mapping['people']['id'] || (!$mapping['people']['email'] && !$mapping['people']['phone'])) {

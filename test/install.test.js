@@ -166,3 +166,32 @@ test('the installer refuses to run from a web request', async () => {
   const src = await (await fetch(base + '/install.php')).text();
   assert.match(src, /PHP_SAPI !== 'cli'/);
 });
+
+test('a weak AI suggestion is corrected by the safety rules (seen on PadiConnect)', async () => {
+  const script = `
+    $argv = ['x']; require ${JSON.stringify(join(process.cwd(), 'sdk/php/recoverkit-connector.php'))};
+    $c = fn($n, $t = 'varchar', $null = true) => ['name' => $n, 'type' => $t, 'nullable' => $null];
+    $tables = [
+      ['name' => 'users', 'columns' => [$c('id','int',false), $c('email'), $c('phone_number'), $c('first_name'), $c('created_at','timestamp'), $c('banned','tinyint',false)], 'values' => []],
+      ['name' => 'wishlist', 'columns' => [$c('id','int',false), $c('user_id','int'), $c('created_at','timestamp')], 'values' => []],
+      ['name' => 'wallet_transactions', 'columns' => [$c('id','int',false), $c('user_id','int'), $c('transaction_type'), $c('amount','decimal'), $c('status','enum'), $c('transaction_reference'), $c('created_at','timestamp')],
+        'values' => ['transaction_type' => ['deposit','Data Purchase','Rental Income','Withdrawal','Landlord Payout','Agent Commission'], 'status' => ['pending','completed','failed','reversed']]],
+    ];
+    $base = fn($t) => ['table' => $t, 'key' => 'id', 'userColumn' => 'user_id', 'emailColumn' => '', 'phoneColumn' => '', 'timeColumn' => 'created_at', 'amountColumn' => 'amount', 'amountUnit' => 'major', 'meta' => null];
+    // What the model suggested: no status filter, payouts counted as sales, sign-ups as logins.
+    $ai = ['people' => ['table' => 'users', 'id' => 'id', 'email' => 'email', 'phone' => 'phone_number', 'firstName' => 'first_name', 'createdAt' => 'created_at'],
+      'conversions' => [$base('wallet_transactions') + ['name' => 'sales', 'refColumn' => 'transaction_reference', 'filters' => [['column' => 'transaction_type', 'values' => ['Data Purchase', 'Landlord Payout', 'Agent Commission']]]]],
+      'signals' => [$base('wallet_transactions') + ['name' => 'dep', 'kind' => 'deposit', 'filters' => [['column' => 'transaction_type', 'values' => ['deposit']]]],
+        ['table' => 'users', 'name' => 'login', 'kind' => 'login', 'key' => 'id', 'userColumn' => 'id', 'emailColumn' => '', 'phoneColumn' => '', 'timeColumn' => 'created_at', 'amountColumn' => '', 'amountUnit' => 'minor', 'filters' => [], 'meta' => null]],
+      'notes' => ''];
+    $m = new ReflectionMethod('RecoverKitConnector', 'checkMapping'); $m->setAccessible(true);
+    echo json_encode(RecoverKitConnector::harden($m->invoke(null, $ai, $tables), $tables));`;
+  const out = await new Promise((resolve) => execFile('php', ['-r', script], (err, o, e) => resolve(err ? 'ERR ' + e : o)));
+  const m = JSON.parse(out);
+  assert.deepEqual(m.people.filters, [{ column: 'banned', values: ['0'] }], 'banned accounts left out');
+  const sale = m.conversions[0].filters;
+  assert.deepEqual(sale.find((f) => f.column === 'status').values, ['completed'], 'only completed rows');
+  assert.deepEqual(sale.find((f) => f.column === 'transaction_type').values, ['Data Purchase'], 'payouts, commissions and income are not sales');
+  assert.deepEqual(m.signals.map((s) => s.table), ['wallet_transactions'], 'no "login" from the users table');
+  assert.ok(m.signals[0].filters.some((f) => f.column === 'status'));
+});
