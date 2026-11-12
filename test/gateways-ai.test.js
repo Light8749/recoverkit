@@ -167,3 +167,13 @@ test('AI base URL: a pasted full endpoint is trimmed to the base', async () => {
   const v = validateAiSettings({ provider: 'openai-compatible', model: 'llama-3.3-70b-versatile', apiKey: 'gsk_x', baseUrl: 'https://api.groq.com/openai/v1/chat/completions/' });
   assert.equal(v.baseUrl, 'https://api.groq.com/openai/v1');
 });
+
+test('AI errors include the provider\'s reason, never a key', async () => {
+  const { createDrafter } = await import('../src/ai.js');
+  const fetch = async () => new Response(JSON.stringify({ error: { message: 'The model `llama-old` does not exist or you do not have access to it. key gsk_abcdefghijklmnop1234', type: 'invalid_request_error' } }), { status: 404 });
+  const d = createDrafter({ resolveAi: () => null, logger: { warn() {} }, fetch, resolver: async () => [{ address: '8.8.8.8' }] });
+  const r = await d.test({ name: 'Shop', voice_profile: '' }, { provider: 'openai-compatible', model: 'llama-old', apiKey: 'gsk_x', baseUrl: 'https://api.groq.com/openai/v1' });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /HTTP 404: The model `?llama-old`? does not exist/);
+  assert.ok(!/gsk_abcdef/.test(r.error), 'keys are hidden');
+});

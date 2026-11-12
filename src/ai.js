@@ -116,7 +116,13 @@ async function postJson(fetchFn, url, headers, body) {
   });
   const text = await res.text();
   if (text.length > MAX_RESPONSE) throw new Error('AI response too large');
-  if (!res.ok) throw new Error(`AI provider returned HTTP ${res.status}`);
+  if (!res.ok) {
+    // Include the provider's own reason (e.g. "model does not exist"), cleaned so no key or token can show.
+    let why = '';
+    try { const j = JSON.parse(text); why = String(j?.error?.message || j?.message || j?.error || ''); } catch { /* not JSON */ }
+    why = why.replace(/\b(sk|gsk|xai|sk-ant|AIza)[A-Za-z0-9_-]{6,}/g, '[key]').replace(/[A-Za-z0-9_-]{32,}/g, '…').replace(/[^\w .,:;'"()\/@+-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    throw new Error(`AI provider returned HTTP ${res.status}${why ? `: ${why}` : ''}`);
+  }
   try { return JSON.parse(text); } catch { throw new Error('AI provider returned invalid JSON'); }
 }
 
