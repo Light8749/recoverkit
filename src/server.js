@@ -57,7 +57,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   const accounts = createAccounts(db);
   const blog = createBlog(db);
   mailer ||= createMailer(config.mail, { fetch, logger });
-  const deps = { db, config, keys, accounts, mailer, logger, blog, projects, people, engine, limiter, outreach, drafter, resolveAi };
+  const deps = { db, config, keys, accounts, mailer, logger, blog, fetch, projects, people, engine, limiter, outreach, drafter, resolveAi };
   const ingest = createIngest(deps);
   const webhooks = createWebhooks(deps);
   const connector = createConnectorApi({ ...deps, requireSecret: ingest.requireSecret, deps: { fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls } });
@@ -170,6 +170,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/dashboard/ai/reset', dash.aiResetAction)
     .add('GET', '/dashboard/channels', dash.channelsPage)
     .add('POST', '/dashboard/channels', dash.channelsAction)
+    .add('POST', '/dashboard/channels/test-email', dash.testEmailAction)
     .add('GET', '/dashboard/developers', dash.developersPage)
     .add('POST', '/dashboard/developers/key', dash.developerKeyAction)
     .add('POST', '/dashboard/developers/install-code', dash.installCodeAction)

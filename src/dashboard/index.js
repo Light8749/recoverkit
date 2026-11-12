@@ -3,6 +3,7 @@
 import { randomToken, sha256Hex, safeEqual, verifyPassword, hashPassword, signToken, verifyToken } from '../crypto.js';
 import { HttpError, sendHtml, redirect, readBody, parseForm, parseCookies, clientIp } from '../http.js';
 import { mask, channelReady } from '../channels.js';
+import { EMAIL_PROVIDERS, SMTP_PORTS, validateEmailConfig, sendEmail } from '../email.js';
 import { PRESETS, FIELD_NAMES, ALGORITHMS } from '../gateways.js';
 import { AI_PROVIDERS } from '../ai.js';
 import { normalizeEmail } from '../../sdk/core/identity.js';
@@ -24,7 +25,7 @@ const STAGE_LABEL = {
 };
 const FIELD_LABEL = { ref: 'Payment reference', amount: 'Amount', currency: 'Currency', email: 'Customer email', phone: 'Customer phone', name: 'Customer name', time: 'Paid at', eventId: 'Unique event ID', kind: 'Sale or deposit tag' };
 
-export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger, blog, scheduler, whatsapp, install }) {
+export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger, blog, scheduler, whatsapp, install, fetch: fetchFn = globalThis.fetch }) {
   const secureCookie = config.publicUrl.startsWith('https://');
   const cookie = (v, maxAge) => `rk_session=${v}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
 
@@ -427,9 +428,24 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
         `<div class="row field stacked"><span class="row-label">Verify token</span><input class="copy" readonly value="${esc(whatsapp.verifyToken(ctx.project.id))}" aria-label="Verify token"></div>`,
       ], 'Paste the callback URL and verify token into Meta, then subscribe to the <b>messages</b> field. Replies appear under Messages → Replies, and "STOP" replies opt people out at once. ' + keep)}
       ${group(`SMS (Termii) ${ready('sms')}`, [field('sms_apiKey', 'API key', '', { type: 'password', max: 200 }), field('sms_senderId', 'Sender ID', ch.sms?.senderId || '', { max: 11 })], keep)}
-      ${group(`Email (Resend) ${ready('email')}`, [field('email_apiKey', 'API key', '', { type: 'password', max: 200 }), field('email_from', 'From', ch.email?.from || '', { placeholder: 'Ada <ada@yourshop.ng>', max: 200 })], keep)}
+      ${group(`Email ${ready('email')}`, [
+        select('email_provider', 'Send with', Object.entries(EMAIL_PROVIDERS).map(([k, v]) => [k, v.label]), ch.email?.provider || 'resend'),
+        field('email_from', 'From', ch.email?.from || '', { placeholder: 'PadiConnect <hello@yourdomain.com>', max: 200, hint: 'An address on a domain your provider has verified' }),
+      ], 'Fill in the fields for the provider you chose. The others are ignored.')}
+      ${group('Email API (Resend, Brevo, SendGrid, Mailgun, Postmark)', [
+        field('email_apiKey', 'API key', '', { type: 'password', max: 500, hint: ch.email?.apiKey ? 'Saved. Leave blank to keep it.' : 'From your provider\'s dashboard: API keys' }),
+        field('email_domain', 'Mailgun sending domain', ch.email?.domain || '', { placeholder: 'mg.yourdomain.com', max: 200, hint: 'Mailgun only' }),
+        select('email_region', 'Mailgun region', [['us', 'US'], ['eu', 'EU']], ch.email?.region || 'us'),
+      ])}
+      ${group('Email SMTP (any mail server)', [
+        field('email_smtpHost', 'Server', ch.email?.smtpHost || '', { placeholder: 'mail.yourdomain.com', max: 253, hint: 'cPanel: mail.yourdomain.com · Gmail: smtp.gmail.com · Zoho: smtp.zoho.com · Brevo: smtp-relay.brevo.com' }),
+        select('email_smtpPort', 'Port', SMTP_PORTS.map((n) => [n, n === 465 ? '465 (SSL)' : n === 587 ? '587 (STARTTLS)' : String(n)]), ch.email?.smtpPort || 587),
+        field('email_smtpUser', 'Username', ch.email?.smtpUser || '', { max: 200, placeholder: 'hello@yourdomain.com' }),
+        field('email_smtpPass', 'Password', '', { type: 'password', max: 500, hint: ch.email?.smtpPass ? 'Saved. Leave blank to keep it.' : 'Gmail: an app password, not your normal password' }),
+      ], 'The connection is always encrypted. Only public mail servers are allowed.')}
       ${group('', [switchRow('console', 'Test mode', Boolean(ch.console), 'Write messages to the server log instead of sending them')])}
-      <button class="btn prominent wide">Save channels</button></form>`,
+      <button class="btn prominent wide">Save channels</button></form>
+      ${channelReady(ch, 'email') ? `<form method="post" action="/dashboard/channels/test-email">${csrfField(ctx)}<button class="btn tinted">Send a test email to ${esc(ctx.user.email)}</button></form>` : ''}`,
     }));
   }
 
@@ -446,11 +462,29 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     if (wa) projects.setChannel(ctx.project.id, 'whatsapp', wa);
     const sms = pick('sms', 'sms', ['apiKey', 'senderId']);
     if (sms) projects.setChannel(ctx.project.id, 'sms', sms);
-    const email = pick('email', 'email', ['apiKey', 'from']);
-    if (email) projects.setChannel(ctx.project.id, 'email', email);
     projects.setChannel(ctx.project.id, 'console', form.console === '1' ? { enabled: true } : null);
+    // Email: merge what was typed into what's saved (blank secrets keep the saved ones), then check it.
+    const ef = ['from', 'apiKey', 'domain', 'smtpHost', 'smtpUser', 'smtpPass'];
+    const provider = Object.hasOwn(EMAIL_PROVIDERS, form.email_provider || '') ? form.email_provider : 'resend';
+    const typed = ef.some((f) => (form[`email_${f}`] || '').trim());
+    if (typed || (cur.email && provider !== (cur.email.provider || 'resend'))) {
+      const merged = { ...(cur.email || {}), provider, region: form.email_region, smtpPort: form.email_smtpPort };
+      for (const f of ef) { const v = (form[`email_${f}`] || '').trim(); if (v) merged[f] = v; }
+      try { projects.setChannel(ctx.project.id, 'email', validateEmailConfig(merged)); }
+      catch (e) { projects.audit(ctx.project.id, ctx.user.email, 'channels'); return back(res, '/dashboard/channels', null, `Other channels saved. Email: ${e.message}`); }
+    }
     projects.audit(ctx.project.id, ctx.user.email, 'channels');
     back(res, '/dashboard/channels', 'Saved.');
+  }
+
+  async function testEmailAction(req, res) {
+    const { ctx } = await postCtx(req);
+    if (!limiter.hit(`test-email:${ctx.project.id}`, 10, 60 * 60e3)) return back(res, '/dashboard/channels', null, 'Test limit reached. Try again in an hour.');
+    const cfg = projects.getChannels(ctx.project).email;
+    const r = await sendEmail(cfg, { to: ctx.user.email, subject: `RecoverKit test email for ${ctx.project.name}`, body: `It works. Follow-ups for ${ctx.project.name} will be sent from ${cfg?.from} using ${EMAIL_PROVIDERS[cfg?.provider || 'resend']?.label || 'email'}.` }, { fetch: fetchFn })
+      .catch((e) => ({ ok: false, error: e.message }));
+    if (r.ok) back(res, '/dashboard/channels', `Test email sent to ${ctx.user.email}. Check your inbox (and spam).`);
+    else back(res, '/dashboard/channels', null, `Test email failed: ${r.error}`);
   }
 
   // ================= settings =================
@@ -637,7 +671,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
   return {
     loginPage, login, logout, overview, leadsPage, messagesPage,
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
-    aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction,
+    aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction, testEmailAction,
     settingsPage, settingsAction, automationAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, replyAction, sendAction,
     developersPage, developerKeyAction, installCodeAction, sharedGuidePage, docsPage, ...acct, ...blogAdmin, isSignedIn: (req) => Boolean(session(req)),
   };

@@ -31,13 +31,17 @@ export function mailFromEnv(env = process.env) {
 }
 
 /** Builds the RFC 5322 message. Exported for tests. */
-export function buildMessage({ from, to, subject, text }) {
+export function buildMessage({ from, to, subject, text, headers = {} }) {
   if (!ADDRESS.test(to) || !HEADER_SAFE.test(subject) || !HEADER_SAFE.test(from)) throw new Error('bad email header');
   const body = String(text).replace(/\r?\n/g, '\r\n');
   return [
     `From: ${from}`, `To: ${to}`, `Subject: ${subject}`, `Date: ${new Date().toUTCString().replace('GMT', '+0000')}`,
     `Message-ID: <${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}@recoverkit>`, 'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: 8bit', 'Auto-Submitted: auto-generated', '', body, '',
+    ...Object.entries(headers).map(([k, v]) => {
+      if (!/^[A-Za-z][A-Za-z0-9-]{0,60}$/.test(k) || !HEADER_SAFE.test(String(v))) throw new Error('bad email header');
+      return `${k}: ${v}`;
+    }),
+    'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: 8bit', ...(headers['List-Unsubscribe'] ? [] : ['Auto-Submitted: auto-generated']), '', body, '',
   ].join('\r\n');
 }
 

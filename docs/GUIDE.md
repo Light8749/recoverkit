@@ -250,7 +250,7 @@ Type any model name your provider offers. API keys are stored encrypted and neve
 
 ## Sending
 
-Channels (Settings): WhatsApp Cloud API (needs an approved template with one `{{1}}` body variable), SMS via Termii, email via Resend, or test mode that only logs. Right before each send, RecoverKit re-checks: has the person bought, opted out, or been messaged in the last 7 days? If so it skips them. Every message carries a signed unsubscribe link.
+Channels: WhatsApp Cloud API (needs an approved template with one `{{1}}` body variable), SMS via Termii, email through any SMTP server (cPanel mailbox, Gmail, Zoho, Brevo SMTP) or the Resend, Brevo, SendGrid, Mailgun or Postmark API, or test mode that only logs. **Send a test email** checks the email settings. Business SMTP only connects to public mail servers on ports 25, 465, 587 or 2525, always encrypted, so an account can't reach the RecoverKit server's own mail system. Right before each send, RecoverKit re-checks: has the person bought, opted out, or been messaged in the last 7 days? If so it skips them. Every message carries a signed unsubscribe link.
 
 Approved messages are sent automatically during each business's sending hours (see *Automatic follow-ups* below), or right away with the Send button.
 

@@ -1,5 +1,6 @@
 // Sending channels. Each adapter takes (cfg, {to, body, subject}) and returns {ok, id?, error?}.
 // Credentials live encrypted in the database and are only decrypted at send time.
+import { sendEmail, emailReady } from './email.js';
 
 const TIMEOUT = 10_000;
 
@@ -19,14 +20,9 @@ export const adapters = {
     return { ok: true, id: 'console' };
   },
 
-  /** Email via Resend (https://resend.com). cfg: { apiKey, from } */
-  async email(cfg, msg, { fetch }) {
-    if (!cfg?.apiKey || !cfg?.from) return { ok: false, error: 'email channel not configured' };
-    const { status, json } = await postJson(fetch, 'https://api.resend.com/emails', { Authorization: `Bearer ${cfg.apiKey}` }, {
-      from: cfg.from, to: [msg.to], subject: msg.subject || 'A quick note', text: msg.body + '\n\n' + msg.unsubscribeText,
-      headers: { 'List-Unsubscribe': `<${msg.unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
-    });
-    return status < 300 ? { ok: true, id: json.id } : { ok: false, error: `resend ${status}` };
+  /** Email: SMTP, or the Resend, Brevo, SendGrid, Mailgun or Postmark API (see email.js). */
+  async email(cfg, msg, deps) {
+    return sendEmail(cfg, msg, deps);
   },
 
   /** SMS via Termii (Nigeria). cfg: { apiKey, senderId } */
@@ -65,7 +61,7 @@ export function channelReady(channels, c) {
   if (!cfg) return false;
   if (c === 'whatsapp') return Boolean(cfg.accessToken && cfg.phoneNumberId && cfg.templateName);
   if (c === 'sms') return Boolean(cfg.apiKey && cfg.senderId);
-  if (c === 'email') return Boolean(cfg.apiKey && cfg.from);
+  if (c === 'email') return emailReady(cfg);
   return Boolean(cfg);
 }
 
