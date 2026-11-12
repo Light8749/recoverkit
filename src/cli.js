@@ -6,6 +6,9 @@
 //   npm run cli -- reset-link <email>                    print a one-hour password reset link
 //   npm run cli -- tick                                  background work: drafts, sending, emails, backups (cron, every 15 min)
 //   npm run cli -- send <projectId>                      send approved messages now
+// node:sqlite prints an "experimental" warning on every run; it's expected, so keep cron logs clean.
+const emitWarning = process.emitWarning;
+process.emitWarning = (w, ...rest) => (String(w?.message || w).includes('SQLite is an experimental') ? undefined : emitWarning.call(process, w, ...rest));
 import { writeFileSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline';
