@@ -153,6 +153,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('GET', '/dashboard/leads', dash.leadsPage)
     .add('GET', '/dashboard/messages', dash.messagesPage)
     .add('POST', '/dashboard/drafts', dash.draftsAction)
+    .add('POST', '/dashboard/drafts/discard', dash.discardDraftsAction)
     .add('POST', '/dashboard/send', dash.sendAction)
     .add('POST', '/dashboard/messages/:id/approve', dash.approveAction)
     .add('POST', '/dashboard/messages/:id/reject', dash.rejectAction)

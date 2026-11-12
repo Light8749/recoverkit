@@ -197,13 +197,16 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     let body = '';
     if (view === 'waiting') {
       const drafts = db.all("SELECT * FROM messages WHERE project_id = ? AND status = 'draft' ORDER BY score DESC LIMIT 100", pid);
-      body = drafts.length ? drafts.map((m) => `<article class="card draft">
+      const discard = drafts.length ? `<details class="danger"><summary>Discard all ${ctx.badge} waiting drafts…</summary>
+        <form method="post" action="/dashboard/drafts/discard">${csrfField(ctx)}<p>They're marked rejected and never sent. Those people can be drafted again straight away, for example after you change your voice or AI model.</p>
+        <button class="btn destructive-fill">Discard all waiting drafts</button></form></details>` : '';
+      body = discard + (drafts.length ? drafts.map((m) => `<article class="card draft">
         <div class="meta">${pill(m.channel)} ${pill(m.lead_type === 'lapsed' ? 'Gone quiet' : 'Never bought')} <small>Score ${m.score} · ${Math.round(m.confidence * 100)}% sure · ${esc(m.tactic.replace(/_/g, ' '))} · ${esc(m.drafted_by)}</small></div>
         <form method="post" action="/dashboard/messages/${esc(m.id)}/approve">${csrfField(ctx)}
           <label class="sr-only" for="b-${esc(m.id)}">Message</label><textarea id="b-${esc(m.id)}" name="body" rows="3" maxlength="1600">${esc(m.body)}</textarea>
           <div class="actions"><button class="btn prominent">Approve</button>
           <button class="btn plain destructive" formaction="/dashboard/messages/${esc(m.id)}/reject">Reject</button></div></form></article>`).join('')
-        : empty('Nothing waiting', 'Drafts appear here for you to check before anything is sent.', `<form method="post" action="/dashboard/drafts">${csrfField(ctx)}<button class="btn tinted">Draft follow-ups now</button></form>`);
+        : empty('Nothing waiting', 'Drafts appear here for you to check before anything is sent.', `<form method="post" action="/dashboard/drafts">${csrfField(ctx)}<button class="btn tinted">Draft follow-ups now</button></form>`));
     } else if (view === 'approved') {
       const list = db.all("SELECT * FROM messages WHERE project_id = ? AND status = 'approved' ORDER BY created_at LIMIT 100", pid);
       body = list.length ? `${group('', list.map((m) => row(esc(m.body.slice(0, 120)), pill(m.channel))), `Before sending, each person is checked again: anyone who has paid, opted out or was messaged in the last ${config.minDaysBetweenMessages} days is skipped.`)}
@@ -649,6 +652,13 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     catch (e) { back(res, '/dashboard/messages?view=replies', null, e.message); }
   }
 
+  async function discardDraftsAction(req, res) {
+    const { ctx } = await postCtx(req);
+    const n = db.run("UPDATE messages SET status = 'rejected', status_reason = 'discarded by the business' WHERE project_id = ? AND status = 'draft'", ctx.project.id).changes;
+    projects.audit(ctx.project.id, ctx.user.email, 'drafts_discarded', String(n));
+    back(res, '/dashboard/messages', `Discarded ${n} draft${n === 1 ? '' : 's'}. Click "Draft follow-ups" on Overview for fresh ones.`);
+  }
+
   async function approveAction(req, res, params) {
     const { ctx, form } = await postCtx(req);
     try { outreach.approve(ctx.project.id, params.id, ctx.user.email, form.body); back(res, '/dashboard/messages', 'Approved.'); }
@@ -672,7 +682,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     loginPage, login, logout, overview, leadsPage, messagesPage,
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
     aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction, testEmailAction,
-    settingsPage, settingsAction, automationAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, replyAction, sendAction,
+    settingsPage, settingsAction, automationAction, newKeyAction, revokeKeyAction, draftsAction, discardDraftsAction, approveAction, rejectAction, replyAction, sendAction,
     developersPage, developerKeyAction, installCodeAction, sharedGuidePage, docsPage, ...acct, ...blogAdmin, isSignedIn: (req) => Boolean(session(req)),
   };
 }

@@ -109,7 +109,26 @@ test('draft checker blocks links, numbers and stray placeholders', () => {
   assert.match(checkDraft('Call us on 0803 123 4567 today ok', 'sms'), /phone/);
   assert.match(checkDraft('Hi {email}, come back and buy', 'sms'), /placeholder/);
   assert.match(checkDraft('x'.repeat(400), 'sms'), /too long/);
-  assert.equal(templateDraft({ stage: 'funded_not_bought' }, {}).tactic, 'reduce_friction');
+  assert.equal(templateDraft({ stage: 'funded_not_bought' }, {}).tactic, 'question');
+});
+
+test('drafts sound human: templates ask a small question, no ad words; the prompt has real, specific facts', async () => {
+  const { buildPrompt } = await import('../src/ai.js');
+  const ad = /\b(instant|seamless|hassle-free|amazing|exciting|don't miss|unlock|grab|we noticed|dear customer|valued|kindly|act now|limited time)\b/i;
+  for (const stage of ['funded_not_bought', 'checkout_abandoned', 'browsed', 'registered', 'bought_once', 'lapsed_repeat', 'other']) {
+    const m = templateDraft({ stage }).message;
+    assert.ok(/\?|help|reply/i.test(m), `${stage}: invites a reply`);
+    assert.ok(!ad.test(m), `${stage}: no ad words`);
+    assert.ok((m.match(/!/g) || []).length <= 1, `${stage}: at most one exclamation mark`);
+  }
+  const p = buildPrompt({ lead: { leadType: 'never_bought', stage: 'funded_not_bought', purchases: 0, idleDays: 2, journey: [{ daysAgo: 2.1, type: 'wallet_funded', amount: 200000 }] }, project: { name: 'Padi', voice_profile: 'Friendly. Sign as Moses.' }, channel: 'whatsapp' });
+  const brief = JSON.parse(/<journey>\n(.*)\n<\/journey>/s.exec(p.user)[1]);
+  assert.equal(brief.journey[0].amount_naira, 2000, 'amounts in naira, not kobo');
+  assert.match(brief.journey[0].when, /^(on \w+day|yesterday)$/, 'a human time phrase');
+  assert.match(brief.today, /day$/);
+  assert.match(p.system, /End with ONE small, easy question/);
+  assert.match(p.system, /Never use these ad phrases/);
+  assert.match(p.system, /Sign as Moses/, 'the business voice is included');
 });
 
 test('client SDK sends only hashes, never the raw email', async () => {

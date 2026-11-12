@@ -176,3 +176,15 @@ test('first-steps checklist and automation settings', async () => {
   assert.deepEqual([row.auto_draft, row.auto_send, row.notify_email, row.send_from, row.send_to], [1, 0, 1, 8, 20]);
   assert.match(loc(await post('/dashboard/automation', { _csrf: c, sendFrom: '8', sendTo: '8' }, s)), /at least one hour/);
 });
+
+test('discard all waiting drafts, then those people can be drafted again', async () => {
+  const s = await login('owner@ada.ng');
+  const c = await csrfOf(s);
+  const pid = app.people.resolve(p.id, identityHashes(p.public_key, { email: 'redraft@ada.ng' }), Date.now());
+  app.db.run("INSERT INTO messages (id, project_id, person_id, lead_type, channel, body, score, confidence, status, drafted_by, created_at) VALUES ('msg_d1', ?, ?, 'never_bought', 'console', 'old style', 50, .9, 'draft', 'template', ?)", p.id, pid, Date.now());
+  assert.match(await (await get('/dashboard/messages', s)).text(), /Discard all \d+ waiting drafts/);
+  assert.match(loc(await post('/dashboard/drafts/discard', { _csrf: c }, s)), /ok=Discarded \d+ draft/);
+  assert.equal(app.db.get("SELECT status FROM messages WHERE id = 'msg_d1'").status, 'rejected');
+  assert.equal(app.db.get("SELECT COUNT(*) n FROM messages WHERE project_id = ? AND status = 'draft'", p.id).n, 0);
+  assert.equal((await post('/dashboard/drafts/discard', { _csrf: 'x' }, s)).status, 403);
+});
