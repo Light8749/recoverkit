@@ -23,8 +23,10 @@ import { brandSvg } from '../scripts/build-brand.js';
 import { loadDownloads, PHP_FILES } from './downloads.js';
 import { createAccounts } from './accounts.js';
 import { createMailer } from './mailer.js';
-import { landingPage, robotsTxt, sitemapXml, llmsTxt, blogIndexPage, blogPostPage, rssXml } from './site.js';
+import { landingPage, robotsTxt, sitemapXml, llmsTxt, blogIndexPage, blogPostPage, rssXml, legalPage } from './site.js';
 import { createBlog } from './blog.js';
+import { createScheduler } from './scheduler.js';
+import { createWhatsApp } from './whatsapp.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +60,10 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   const ingest = createIngest(deps);
   const webhooks = createWebhooks(deps);
   const connector = createConnectorApi({ ...deps, requireSecret: ingest.requireSecret, deps: { fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls } });
+  const whatsapp = createWhatsApp({ db, keys, config, projects, people, limiter, fetch, logger });
+  deps.whatsapp = whatsapp;
+  const scheduler = createScheduler({ db, config, projects, outreach, mailer, logger });
+  deps.scheduler = scheduler;
   const dash = createDashboard(deps);
 
   const css = readFileSync(join(here, 'dashboard/app.css'));
@@ -93,6 +99,8 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/v1/connector/suggest', connector.suggest)
     .add('POST', '/v1/connector/sync', connector.sync)
     .add('POST', '/v1/webhooks/:gatewayId', webhooks.receive)
+    .add('GET', '/v1/whatsapp/:projectId', whatsapp.verify)
+    .add('POST', '/v1/whatsapp/:projectId', whatsapp.receive)
     .add('GET', '/', (req, res) => sendHtml(res, 200, landingPage(config, { signedIn: dash.isSignedIn(req), signupOpen: signupLive() }), { 'Cache-Control': 'no-cache' }))
     .add('GET', '/blog', (req, res) => sendHtml(res, 200, blogIndexPage(config, { posts: blog.listPublished(), signedIn: dash.isSignedIn(req), signupOpen: signupLive() }), { 'Cache-Control': 'no-cache' }))
     .add('GET', '/blog/rss.xml', text(() => rssXml(config, blog.listPublished(50)), 'application/rss+xml; charset=utf-8'))
@@ -105,6 +113,8 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('GET', '/:file.html', (_q, res, params) => (config.googleVerify && params.file === config.googleVerify
       ? send(res, 200, `google-site-verification: ${config.googleVerify}.html`, { 'Content-Type': 'text/html; charset=utf-8' })
       : send(res, 404, { error: 'not found' })))
+    .add('GET', '/privacy', (req, res) => sendHtml(res, 200, legalPage(config, 'privacy', { signedIn: dash.isSignedIn(req), signupOpen: signupLive() })))
+    .add('GET', '/terms', (req, res) => sendHtml(res, 200, legalPage(config, 'terms', { signedIn: dash.isSignedIn(req), signupOpen: signupLive() })))
     .add('GET', '/robots.txt', text(() => robotsTxt(config), 'text/plain; charset=utf-8'))
     .add('GET', '/sitemap.xml', text(() => sitemapXml(config, signupLive(), blog.listPublished()), 'application/xml; charset=utf-8'))
     .add('GET', '/llms.txt', text(() => llmsTxt(config, signupLive(), blog.listPublished()), 'text/plain; charset=utf-8'))
@@ -139,6 +149,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/dashboard/send', dash.sendAction)
     .add('POST', '/dashboard/messages/:id/approve', dash.approveAction)
     .add('POST', '/dashboard/messages/:id/reject', dash.rejectAction)
+    .add('POST', '/dashboard/replies/:id', dash.replyAction)
     .add('GET', '/dashboard/payments', dash.paymentsPage)
     .add('GET', '/dashboard/payments/new', dash.newGatewayPage)
     .add('POST', '/dashboard/payments', dash.createGatewayAction)
@@ -156,6 +167,11 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/dashboard/developers/key', dash.developerKeyAction)
     .add('GET', '/dashboard/settings', dash.settingsPage)
     .add('POST', '/dashboard/settings', dash.settingsAction)
+    .add('POST', '/dashboard/automation', dash.automationAction)
+    .add('POST', '/dashboard/team', dash.inviteMemberAction)
+    .add('POST', '/dashboard/team/:id/resend', dash.resendInviteAction)
+    .add('POST', '/dashboard/team/:id/remove', dash.removeMemberAction)
+    .add('POST', '/dashboard/delete-business', dash.deleteBusinessAction)
     .add('POST', '/dashboard/keys', dash.newKeyAction)
     .add('POST', '/dashboard/keys/:id/revoke', dash.revokeKeyAction);
   for (const f of PHP_FILES) r.add('GET', `/sdk/php/${f}`, download(f, downloads.php[f]));
@@ -178,16 +194,18 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
 
   async function handle(req, res) {
     res.rkSecure = isSecure(req, config.trustProxy);
+    kick();
     let url;
     try { url = new URL(req.url, 'http://x'); } catch { return send(res, 400, { error: 'bad url' }); }
     try {
       const u = UNSUB.exec(url.pathname);
       if (u) return await unsubscribe(req, res, u[1]);
       const g = GUIDE.exec(url.pathname);
-      if (g) return req.method === 'GET' ? dash.sharedGuidePage(req, res, { token: g[1] }) : send(res, 405, { error: 'method not allowed' });
+      if (g) return req.method === 'GET' || req.method === 'HEAD' ? dash.sharedGuidePage(req, res, { token: g[1] }) : send(res, 405, { error: 'method not allowed' });
       // Signed-in and one-time pages never belong in search results.
       if (/^\/(dashboard|admin|reset|forgot|dev|u)(\/|$)/.test(url.pathname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-      const m = r.match(req.method, url.pathname);
+      // HEAD is answered like GET (Node sends the headers only), so uptime monitors and link checkers work.
+      const m = r.match(req.method === 'HEAD' ? 'GET' : req.method, url.pathname);
       if (!m) return send(res, 404, { error: 'not found' });
       if (m.status) return send(res, m.status, { error: 'method not allowed' });
       await m.handler(req, res, m.params, url);
@@ -225,13 +243,25 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   const purgeTimer = setInterval(purgeOld, 6 * 36e5);
   purgeTimer.unref();
 
+  // Background work also runs from the app: every 10 minutes while it's awake, and on a request
+  // when the last run was over 15 minutes ago (cPanel puts idle apps to sleep, so cron is the backstop).
+  let lastKick = Date.now();
+  function kick(force = false) {
+    if (config.scheduler === false || (!force && Date.now() - lastKick < 15 * 60e3)) return;
+    lastKick = Date.now();
+    scheduler.tick().catch((e) => logger.warn?.(`[tick] ${e.message}`));
+  }
+  const tickTimer = setInterval(() => kick(true), 10 * 60e3);
+  tickTimer.unref();
+
   function close() {
     clearInterval(purgeTimer);
+    clearInterval(tickTimer);
     limiter.stop();
     return new Promise((resolve) => server.close(() => { db.close(); resolve(); }));
   }
 
-  return { server, db, keys, accounts, projects, purgeOld, people, engine, outreach, limiter, close };
+  return { server, db, keys, accounts, projects, purgeOld, scheduler, people, engine, outreach, limiter, close };
 }
 
 // Run directly: `node src/server.js`

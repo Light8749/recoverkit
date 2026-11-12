@@ -186,6 +186,32 @@ CREATE TABLE IF NOT EXISTS posts (
   published_at INTEGER
 );
 
+-- Replies received on WhatsApp. The sender's number and the text are encrypted.
+CREATE TABLE IF NOT EXISTS inbound (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  person_id TEXT REFERENCES persons(id) ON DELETE SET NULL,
+  channel TEXT NOT NULL DEFAULT 'whatsapp',
+  provider_id TEXT NOT NULL,
+  from_enc TEXT NOT NULL,
+  from_masked TEXT NOT NULL,
+  body_enc TEXT NOT NULL,
+  is_stop INTEGER NOT NULL DEFAULT 0,
+  received_at INTEGER NOT NULL,
+  replied_at INTEGER,
+  reply_enc TEXT,
+  UNIQUE (project_id, provider_id)
+);
+CREATE INDEX IF NOT EXISTS inbound_project ON inbound(project_id, received_at);
+
+-- Background jobs: a lease so the app and a cron run never work at the same time.
+CREATE TABLE IF NOT EXISTS jobs (
+  name TEXT PRIMARY KEY,
+  locked_until INTEGER NOT NULL DEFAULT 0,
+  last_run INTEGER NOT NULL DEFAULT 0,
+  last_result TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id TEXT NOT NULL,
@@ -203,6 +229,12 @@ export function openDb(path) {
   if (!db.prepare('PRAGMA table_info(events)').all().some((c) => c.name === 'source_key')) db.exec('ALTER TABLE events ADD COLUMN source_key TEXT');
   // Migration: projects.source ('signup' for self-service accounts, so unconfirmed ones can be cleaned up).
   if (!db.prepare('PRAGMA table_info(projects)').all().some((c) => c.name === 'source')) db.exec("ALTER TABLE projects ADD COLUMN source TEXT NOT NULL DEFAULT ''");
+  // Migration: automatic follow-ups (per business). Hours are Lagos time.
+  const projCols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
+  for (const [col, def] of [['auto_draft', 'INTEGER NOT NULL DEFAULT 1'], ['auto_send', 'INTEGER NOT NULL DEFAULT 1'], ['notify_email', 'INTEGER NOT NULL DEFAULT 1'],
+    ['send_from', 'INTEGER NOT NULL DEFAULT 9'], ['send_to', 'INTEGER NOT NULL DEFAULT 19'], ['last_auto_draft_day', "TEXT NOT NULL DEFAULT ''"], ['last_reply_notice_at', 'INTEGER NOT NULL DEFAULT 0']]) {
+    if (!projCols.includes(col)) db.exec(`ALTER TABLE projects ADD COLUMN ${col} ${def}`);
+  }
   // Migration: users.is_admin marks whoever runs this RecoverKit server (Admin pages).
   if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'is_admin')) db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS events_source_key ON events(project_id, source_key) WHERE source_key IS NOT NULL');

@@ -59,11 +59,21 @@ export const adapters = {
 
 export const mask = (s) => (!s ? '' : s.includes('@') ? s.replace(/^(.).*(@.*)$/, '$1***$2') : s.slice(0, 5) + '****' + s.slice(-2));
 
+/** A channel counts only when everything needed to send is set (WhatsApp replies alone don't count). */
+export function channelReady(channels, c) {
+  const cfg = channels?.[c];
+  if (!cfg) return false;
+  if (c === 'whatsapp') return Boolean(cfg.accessToken && cfg.phoneNumberId && cfg.templateName);
+  if (c === 'sms') return Boolean(cfg.apiKey && cfg.senderId);
+  if (c === 'email') return Boolean(cfg.apiKey && cfg.from);
+  return Boolean(cfg);
+}
+
 /** Pick the first configured channel the person can be reached on. */
 export function chooseChannel(channels, contact, preferred) {
   const order = preferred ? [preferred] : ['whatsapp', 'sms', 'email', 'console'];
   for (const c of order) {
-    if (!channels[c]) continue;
+    if (!channelReady(channels, c)) continue;
     if ((c === 'whatsapp' || c === 'sms') && contact?.phone) return { channel: c, to: contact.phone };
     if (c === 'email' && contact?.email) return { channel: c, to: contact.email };
     if (c === 'console') return { channel: c, to: contact?.phone || contact?.email || '(no contact)' };

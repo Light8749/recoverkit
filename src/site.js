@@ -4,6 +4,7 @@
 // no invented numbers or testimonials.
 import { esc, assets, kobo } from './dashboard/ui.js';
 import { renderMarkdown, readingMinutes, plainText } from './blog.js';
+import { privacyMarkdown, termsMarkdown, LEGAL_UPDATED } from './legal.js';
 
 const GATEWAYS = ['Paystack', 'Flutterwave', 'Monnify', 'Korapay', 'Squad', 'Stripe', 'any gateway that signs its webhooks'];
 const DATABASES = ['MySQL', 'MariaDB', 'PostgreSQL', 'SQLite', 'MongoDB', 'WooCommerce'];
@@ -52,7 +53,7 @@ function jsonLdData(f) {
 
 const nav = (signedIn) => `<header class="m-nav"><a class="m-brand" href="/">${kobo({ mode: 'mark', size: 32, title: 'RecoverKit' })}<b>RecoverKit</b></a>
   <nav aria-label="Site"><a href="/#how">How it works</a><a href="/#pricing">Pricing</a><a href="/blog">Blog</a><a href="/docs">Developers</a>${signedIn ? '<a href="/dashboard">Dashboard</a>' : '<a href="/login">Sign in</a>'}</nav></header>`;
-const footer = (f) => `<footer class="m-foot"><span>© ${new Date().getUTCFullYear()} RecoverKit</span><nav aria-label="Footer"><a href="/blog">Blog</a><a href="/docs">Developer docs</a><a href="https://github.com/Light8749/recoverkit">GitHub</a><a href="/login">Sign in</a>${f.signupOpen ? '<a href="/signup">Create an account</a>' : ''}</nav></footer>`;
+const footer = (f) => `<footer class="m-foot"><span>© ${new Date().getUTCFullYear()} RecoverKit</span><nav aria-label="Footer"><a href="/blog">Blog</a><a href="/docs">Developer docs</a><a href="https://github.com/Light8749/recoverkit">GitHub</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/login">Sign in</a>${f.signupOpen ? '<a href="/signup">Create an account</a>' : ''}</nav></footer>`;
 const ctaButtons = (f, signedIn) => (signedIn
   ? '<a class="btn prominent" href="/dashboard">Open your dashboard</a>'
   : `${f.signupOpen ? '<a class="btn prominent" href="/signup">Create a free account</a>' : ''}<a class="btn ${f.signupOpen ? 'tinted' : 'prominent'}" href="/login">Sign in</a>`);
@@ -183,6 +184,17 @@ ${more.length ? `<section class="m-more"><h2>More from the blog</h2>${more.map((
 </main>${footer(f)}</body></html>`;
 }
 
+export function legalPage(config, kind, { signedIn = false, signupOpen = false } = {}) {
+  const f = siteFacts(config, signupOpen);
+  const privacy = kind === 'privacy';
+  const title = privacy ? 'Privacy Policy' : 'Terms of Service';
+  const desc = privacy ? 'What data RecoverKit handles, why, how long it is kept, and your rights under the Nigeria Data Protection Act.' : 'The terms for using RecoverKit, including your responsibilities when messaging customers.';
+  return `${head(f, { title: `${title} | RecoverKit`, desc, path: `/${kind}` })}
+<body class="marketing">${nav(signedIn)}
+<main id="main" class="m-article-wrap"><article class="m-article"><h1>${title}</h1><p class="m-meta">Last updated ${LEGAL_UPDATED}</p>
+<div class="m-prose">${renderMarkdown(privacy ? privacyMarkdown(config) : termsMarkdown(config))}</div></article></main>${footer(f)}</body></html>`;
+}
+
 export function rssXml(config, posts) {
   const f = siteFacts(config);
   const x = (s) => esc(s);
@@ -208,7 +220,7 @@ Sitemap: ${config.publicUrl}/sitemap.xml
 }
 
 export function sitemapXml(config, signupOpen = false, posts = []) {
-  const pages = ['/', '/blog', '/docs', ...(signupOpen ? ['/signup'] : []), '/login', '/llms.txt'];
+  const pages = ['/', '/blog', '/docs', ...(signupOpen ? ['/signup'] : []), '/privacy', '/terms'];
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${pages.map((p) => `  <url><loc>${esc(config.publicUrl + p)}</loc></url>`).join('\n')}

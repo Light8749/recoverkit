@@ -114,6 +114,7 @@ textarea, input.copy {
 }
 input.copy { font-family: var(--mono); font-size: 13px; margin-top: 8px; }
 .row input.copy { margin: 0; }
+.row.field.stacked input.copy { flex: 1 1 auto; width: 100%; text-align: left; margin-top: 6px; }
 
 /* switch (a real checkbox) */
 .switch { position: relative; flex: none; width: 51px; height: 31px; }
@@ -204,6 +205,12 @@ details[open] > summary::before { transform: rotate(90deg); }
 details.danger > summary { color: var(--red); }
 details.danger form { background: var(--bg-2); border-radius: var(--radius); padding: 14px 16px; }
 details.danger p { margin: 0 0 12px; color: var(--label-2); font-size: 14px; }
+
+/* ---------- first steps ---------- */
+.done { color: var(--label-2); }
+.reply-text { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reply-sent { margin: 0 0 8px; color: var(--label-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.inline-actions { display: flex; gap: 4px; align-items: center; }
 
 /* ---------- developer guide ---------- */
 .row.code-row { flex-direction: column; align-items: stretch; gap: 6px; }

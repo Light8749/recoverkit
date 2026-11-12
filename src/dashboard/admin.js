@@ -2,13 +2,14 @@
 // section, where whoever runs this RecoverKit server adds businesses and their logins.
 import { HttpError, sendHtml, redirect, readBody, parseForm, clientIp } from '../http.js';
 import { checkPassword, RESET_MINUTES, INVITE_DAYS } from '../accounts.js';
+import { verifyPassword } from '../crypto.js';
 import { normalizeEmail } from '../../sdk/core/identity.js';
 import { esc, money, ago, csrfField, banner, page, group, row, field, select, pill, empty } from './ui.js';
 import { kobo } from './mascot.js';
 
 const ADMIN_RESET_HOURS = 24;
 
-export function createAccountPages({ db, config, projects, engine, limiter, accounts, mailer, logger = console, requireSession, postCtx, sameOrigin, back }) {
+export function createAccountPages({ db, config, projects, engine, limiter, accounts, mailer, logger = console, scheduler, requireSession, postCtx, sameOrigin, back }) {
   const link = (token) => `${config.publicUrl}/reset/${token}`;
 
   const hide = (e) => e.replace(/^(.).*@/, '$1***@');
@@ -39,6 +40,7 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
           field('email', 'Your email', '', { type: 'email', max: 254, required: true, autocomplete: 'email', placeholder: 'you@yourbusiness.ng' }),
         ], 'We\'ll email you a link to confirm your address and choose a password.')}
         <label class="sr-only" hidden>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label>
+        <p class="group-foot">By creating an account you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
         <button class="btn prominent wide">Create account</button></form>
       <p class="subtitle">Already have an account? <a href="/login">Sign in</a></p>`));
   }
@@ -192,6 +194,14 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
         ], `The owner gets a link to choose their password (it works for ${INVITE_DAYS} days). Then they connect their app from their Developers page.`)}
         <button class="btn prominent">Add business</button></form>
       ${rows.length ? group(`${rows.length} business${rows.length === 1 ? '' : 'es'}`, rows, 'Recovered revenue is all time.') : empty('No businesses yet', 'Add the first one above.')}
+      ${(() => {
+        const run = scheduler?.lastRun();
+        const bk = scheduler?.backups() || [];
+        return group('Background work', [
+          row('Last run', run?.last_run ? ago(run.last_run) : pill('Never', 'orange'), { sub: 'Drafting, sending, emails and backups. Set up the cron job so this runs every 15 minutes, even when nobody visits.' }),
+          row('Database backups', bk.length ? `${bk.length} kept · latest ${ago(bk[0].at)}` : pill('None yet', 'orange'), { sub: `In ${esc(scheduler?.backupDir || '')}. Download one now and then to keep a copy off the server, together with .env.` }),
+        ]);
+      })()}
       ${group('Sign-up', [row('Businesses can sign up themselves', config.signup === 'open' ? (mailer.enabled ? pill('Open', 'green') : pill('Needs email', 'orange')) : pill('Invite-only'),
         { sub: config.signup === 'open' ? `${esc(config.publicUrl)}/signup` : 'Add RK_SIGNUP=open to .env to let businesses create their own account' })])}
       ${group('Email', [row('Invites and password resets', mailer.enabled ? pill(`Sent by ${mailer.mode}`, 'green') : pill('Not set up', 'orange'),
@@ -278,7 +288,86 @@ export function createAccountPages({ db, config, projects, engine, limiter, acco
     else back(res, '/admin', null, `Email failed: ${r.error}`);
   }
 
+  // ================= team and deleting a business (Settings) =================
+  const members = (projectId) => db.all('SELECT id, email, password_hash, is_admin, created_at FROM users WHERE project_id = ? ORDER BY created_at', projectId);
+
+  function teamGroups(ctx) {
+    const list = members(ctx.project.id);
+    const rows = list.map((u) => {
+      const me = u.id === ctx.user.id;
+      const actions = me ? pill('You') : u.is_admin ? pill('Server admin') : `<span class="inline-actions">${u.password_hash ? '' : `<form method="post" action="/dashboard/team/${esc(u.id)}/resend">${csrfField(ctx)}<button class="btn plain small">Resend invite</button></form>`}<form method="post" action="/dashboard/team/${esc(u.id)}/remove">${csrfField(ctx)}<button class="btn plain destructive small">Remove</button></form></span>`;
+      return `<div class="row"><span class="row-label">${esc(u.email)}<small>${u.password_hash ? 'Active' : 'Invited, hasn\'t set a password yet'} · added ${ago(u.created_at)}</small></span><span class="row-value">${actions}</span></div>`;
+    });
+    const canDelete = !list.some((u) => u.is_admin);
+    return `${group('Team', rows, 'Everyone here can see and change everything for this business.')}
+      <form method="post" action="/dashboard/team" autocomplete="off">${csrfField(ctx)}
+        ${group('Invite a colleague', [field('email', 'Email', '', { type: 'email', max: 254, required: true, placeholder: 'colleague@yourbusiness.ng' })], mailer.enabled ? `They get an email with a link to choose a password (it works for ${INVITE_DAYS} days).` : 'You\'ll get a link to send them yourself: email isn\'t set up on this server.')}
+        <button class="btn tinted">Send invite</button></form>
+      ${canDelete ? `<details class="danger"><summary>Delete this business…</summary>
+        <form method="post" action="/dashboard/delete-business" autocomplete="off">${csrfField(ctx)}
+          <p>This permanently deletes ${esc(ctx.project.name)}: its customers, messages, payment records, settings, keys and every login. Websites and connectors using its keys stop working. This can't be undone.</p>
+          <input type="email" name="username" value="${esc(ctx.user.email)}" autocomplete="username" readonly hidden>
+          ${group('', [field('confirmName', 'Type the business name', '', { max: 80, required: true, placeholder: ctx.project.name }), field('password', 'Your password', '', { type: 'password', max: 200, required: true, autocomplete: 'current-password' })])}
+          <button class="btn destructive-fill">Delete business permanently</button></form></details>` : ''}`;
+  }
+
+  async function inviteMemberAction(req, res, _p, url) {
+    const { ctx, form } = await postCtx(req);
+    if (!limiter.hit(`team-invite:${ctx.project.id}`, 20, 60 * 60e3)) return back(res, '/dashboard/settings', null, 'Too many invites. Try again in an hour.');
+    let inv;
+    try { inv = accounts.invite(ctx.project.id, form.email); } catch (e) { return back(res, '/dashboard/settings', null, e.message); }
+    const email = normalizeEmail(form.email);
+    projects.audit(ctx.project.id, ctx.user.email, 'user_invited', email);
+    const sent = await mail(email, `You've been invited to ${ctx.project.name} on RecoverKit`, inviteText(ctx.project.name, inv.token));
+    if (sent) return back(res, '/dashboard/settings', `Invite emailed to ${email}.`);
+    return settingsWith(req, res, url, linkBanner(email, inv.token, false, 'Invite')); // show the link to send by hand
+  }
+
+  function memberOf(ctx, id) {
+    const u = accounts.byId(id);
+    if (!u || u.project_id !== ctx.project.id) throw new HttpError(404, 'That person isn\'t on your team.');
+    return u;
+  }
+
+  async function resendInviteAction(req, res, params, url) {
+    const { ctx } = await postCtx(req);
+    const u = memberOf(ctx, params.id);
+    if (u.password_hash) return back(res, '/dashboard/settings', null, `${u.email} has already set a password.`);
+    if (!limiter.hit(`team-invite:${ctx.project.id}`, 20, 60 * 60e3)) return back(res, '/dashboard/settings', null, 'Too many invites. Try again in an hour.');
+    const token = accounts.issue(u.id, 'invite');
+    projects.audit(ctx.project.id, ctx.user.email, 'invite_link_created', u.email);
+    const sent = await mail(u.email, `You've been invited to ${ctx.project.name} on RecoverKit`, inviteText(ctx.project.name, token));
+    return settingsWith(req, res, url, linkBanner(u.email, token, sent, 'Invite'));
+  }
+
+  async function removeMemberAction(req, res, params) {
+    const { ctx } = await postCtx(req);
+    const u = memberOf(ctx, params.id);
+    if (u.id === ctx.user.id) return back(res, '/dashboard/settings', null, 'You can\'t remove yourself.');
+    if (u.is_admin) return back(res, '/dashboard/settings', null, 'The server admin can\'t be removed here.');
+    db.run('DELETE FROM users WHERE id = ? AND project_id = ?', u.id, ctx.project.id);
+    projects.audit(ctx.project.id, ctx.user.email, 'user_removed', u.email);
+    back(res, '/dashboard/settings', `${u.email} was removed and signed out.`);
+  }
+
+  async function deleteBusinessAction(req, res) {
+    const { ctx, form } = await postCtx(req);
+    if (!limiter.hit(`delete-business:${ctx.user.id}`, 5, 60 * 60e3)) return back(res, '/dashboard/settings', null, 'Too many attempts. Try again in an hour.');
+    if (members(ctx.project.id).some((u) => u.is_admin)) return back(res, '/dashboard/settings', null, 'This business belongs to the server admin and can\'t be deleted here.');
+    if (String(form.confirmName || '').trim() !== ctx.project.name) return back(res, '/dashboard/settings', null, 'The business name you typed doesn\'t match.');
+    const me = accounts.byId(ctx.user.id);
+    if (!verifyPassword(String(form.password || '').slice(0, 200), me.password_hash)) return back(res, '/dashboard/settings', null, 'Your password is wrong.');
+    const name = ctx.project.name;
+    projects.audit(ctx.project.id, ctx.user.email, 'business_deleted', name);
+    db.run('DELETE FROM projects WHERE id = ?', ctx.project.id); // cascades to customers, messages, keys, logins and sessions
+    redirect(res, '/login?ok=' + encodeURIComponent(`${name} and all its data were deleted.`), { 'Set-Cookie': `rk_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${config.publicUrl.startsWith('https://') ? '; Secure' : ''}` });
+  }
+
+  let settingsWith = () => { throw new Error('settings page not wired'); };
+  const setSettingsPage = (fn) => { settingsWith = fn; };
+
   return {
+    teamGroups, inviteMemberAction, resendInviteAction, removeMemberAction, deleteBusinessAction, setSettingsPage,
     requireAdmin, adminPost, signupPage, signup, mailTestAction, forgotPage, forgot, resetPage, reset, changePasswordAction, passwordGroup,
     adminPage, addBusinessAction, adminBusinessPage, addUserAction, userLinkAction,
   };

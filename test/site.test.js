@@ -112,3 +112,33 @@ test('free by default: no fee anywhere on the site, FAQ or llms.txt', async () =
   assert.match(await (await fetch(b + '/llms.txt')).text(), /Pricing: free\./);
   await a.close(); rmSync(d, { recursive: true, force: true });
 });
+
+test('HEAD requests work like GET without a body (uptime monitors)', async () => {
+  for (const p of ['/', '/health', '/blog', '/docs', '/sitemap.xml']) {
+    const r = await fetch(base + p, { method: 'HEAD' });
+    assert.equal(r.status, 200, p);
+    assert.equal((await r.text()).length, 0, `${p}: no body`);
+  }
+  assert.equal((await fetch(base + '/nope', { method: 'HEAD' })).status, 404);
+  assert.equal((await fetch(base + '/v1/collect', { method: 'HEAD' })).status, 405, 'POST-only endpoints still refuse');
+});
+
+test('Privacy Policy and Terms: linked, indexable, name the operator and contact', async () => {
+  cfg.operatorName = 'Padi Tech Ltd'; cfg.contactEmail = 'privacy@padi.ng';
+  for (const p of ['/privacy', '/terms']) {
+    const r = await fetch(base + p);
+    assert.equal(r.status, 200, p);
+    const html = await r.text();
+    assert.match(html, /Padi Tech Ltd/);
+    assert.match(html, /href="mailto:privacy@padi\.ng"/);
+    assert.match(html, /Nigeria Data Protection/);
+    assert.ok(!/style="/.test(html));
+  }
+  assert.match(await (await fetch(base + '/privacy')).text(), /never receives names, emails or phone numbers/);
+  assert.match(await (await fetch(base + '/terms')).text(), /governed by the laws of the Federal Republic of Nigeria/);
+  const home = await (await fetch(base + '/')).text();
+  assert.match(home, /href="\/privacy">Privacy<\/a><a href="\/terms">Terms<\/a>/);
+  assert.match(await (await fetch(base + '/sitemap.xml')).text(), /\/privacy<\/loc>[\s\S]*\/terms<\/loc>/);
+  cfg.operatorName = null; cfg.contactEmail = null;
+  assert.match(await (await fetch(base + '/terms')).text(), /operator of RecoverKit/);
+});

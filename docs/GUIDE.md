@@ -31,6 +31,24 @@ Make your own login the server admin once: `npm run cli -- make-admin you@yourbu
 
 Everyone can change their password under **Settings → Password** (other devices are signed out), and **Forgot your password?** on the sign-in page emails a one-hour link. Links are single-use and only their hashes are stored; a new link cancels the previous one. Without email set up, `npm run cli -- reset-link <email>` prints one.
 
+## Automatic follow-ups, emails and backups
+
+`npm run cli -- tick` does the background work; run it from cron every 15 minutes (the app also runs it while it's awake). For each business, in its sending hours (Lagos time, set in **Settings → Automatic follow-ups**):
+
+- **Daily drafts:** up to 20 follow-ups once a day for the people most worth following up (never anyone with a pending message or one sent in the last 7 days).
+- **Owner email:** "N follow-ups are waiting for your approval", and "N new replies on WhatsApp". Each can be turned off.
+- **Sending:** approved messages go out automatically, only inside the sending hours, with the usual last-second checks.
+
+Once a day it also backs up the database with `VACUUM INTO` to `backups/recoverkit-YYYY-MM-DD.db`, keeping the last 7. A lease in the `jobs` table stops the cron run and the app from working at the same time.
+
+## WhatsApp replies
+
+In **Channels → WhatsApp replies**, enter the Meta app secret, then paste the callback URL and verify token into the Meta app (WhatsApp → Configuration → Webhook) and subscribe to **messages**. Incoming messages are checked with `X-Hub-Signature-256`, de-duplicated, and stored encrypted. "STOP", "unsubscribe" and similar replies opt the person out immediately, cancel their pending messages and send a confirmation. Other replies appear under **Messages → Replies**, where you can answer within WhatsApp's 24-hour window.
+
+## Team and deleting a business
+
+**Settings → Team:** invite colleagues by email (7-day link), resend invites, and remove people (not yourself, and never the server admin). **Delete this business** asks for the exact business name and your password, then deletes the business and everything linked to it: customers, messages, payments, keys and logins. The server admin's own business can't be deleted from the dashboard.
+
 ## Onboarding a business's developer
 
 The developer never needs this repository or the server code. In the dashboard, the business owner opens **Developers**, which shows every step with their own keys and server address filled in:
@@ -216,7 +234,7 @@ Type any model name your provider offers. API keys are stored encrypted and neve
 
 Channels (Settings): WhatsApp Cloud API (needs an approved template with one `{{1}}` body variable), SMS via Termii, email via Resend, or test mode that only logs. Right before each send, RecoverKit re-checks: has the person bought, opted out, or been messaged in the last 7 days? If so it skips them. Every message carries a signed unsubscribe link.
 
-Run `npm run cli -- send <projectId>` from cron to send approved messages automatically, or use the Send button.
+Approved messages are sent automatically during each business's sending hours (see *Automatic follow-ups* below), or right away with the Send button.
 
 ## Recovered revenue
 
@@ -230,6 +248,9 @@ A verified purchase within 7 days of a sent message counts as recovered (`RK_ATT
 | `RK_PUBLIC_URL` | `http://localhost:8787` | Must be `https://` in production. |
 | `RK_TRUST_PROXY` | off | Set `1` behind a TLS proxy so client IPs and https are detected. |
 | `RK_GOOGLE_VERIFY` | none | Google Search Console HTML-file verification: set it to the file name without `.html`, e.g. `google4cdb70df215417e3`. |
+| `RK_OPERATOR_NAME` | none | Who runs this server, shown in the Privacy Policy and Terms. |
+| `RK_CONTACT_EMAIL` | none | Contact email shown in the Privacy Policy and Terms. |
+| `RK_BACKUP_DIR` | `backups/` next to the database | Where daily backups go (the last 7 are kept). |
 | `RK_SIGNUP` | invite-only | `open` lets businesses create their own account at `/signup` (needs email set up). |
 | `RK_MAIL_FROM` | none | Sender for invites and password resets, e.g. `RecoverKit <no-reply@yourdomain.com>`. Without it, links are shown on the Admin page for you to send. |
 | `RK_BREVO_API_KEY` | none | Send those emails through Brevo's HTTPS API. Use this on shared hosting that blocks SMTP ports (an `ECONNREFUSED …:587` error). |

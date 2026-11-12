@@ -69,8 +69,17 @@ export function createProjects(db, keys) {
       next.allowed_origins = JSON.stringify(list.slice(0, 20));
     }
     if (patch.requireApproval !== undefined) next.require_approval = patch.requireApproval ? 1 : 0;
-    db.run('UPDATE projects SET voice_profile=?, payment_link=?, gateway_mode=?, allowed_origins=?, require_approval=? WHERE id=?',
-      next.voice_profile, next.payment_link, next.gateway_mode, next.allowed_origins, next.require_approval, projectId);
+    for (const [k, col] of [['autoDraft', 'auto_draft'], ['autoSend', 'auto_send'], ['notifyEmail', 'notify_email']]) if (patch[k] !== undefined) next[col] = patch[k] ? 1 : 0;
+    for (const [k, col] of [['sendFrom', 'send_from'], ['sendTo', 'send_to']]) {
+      if (patch[k] === undefined) continue;
+      const h = Number(patch[k]);
+      if (!Number.isInteger(h) || h < 0 || h > 23) throw new Error('sending hours must be between 0 and 23');
+      next[col] = h;
+    }
+    if (next.send_from === next.send_to) throw new Error('the sending window must be at least one hour');
+    db.run('UPDATE projects SET voice_profile=?, payment_link=?, gateway_mode=?, allowed_origins=?, require_approval=?, auto_draft=?, auto_send=?, notify_email=?, send_from=?, send_to=? WHERE id=?',
+      next.voice_profile, next.payment_link, next.gateway_mode, next.allowed_origins, next.require_approval,
+      next.auto_draft, next.auto_send, next.notify_email, next.send_from, next.send_to, projectId);
     return byId(projectId);
   }
 

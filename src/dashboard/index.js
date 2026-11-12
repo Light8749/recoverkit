@@ -2,7 +2,7 @@
 // Server-rendered HTML, no JavaScript, strict CSP. Every dynamic value is escaped.
 import { randomToken, sha256Hex, safeEqual, verifyPassword, hashPassword, signToken, verifyToken } from '../crypto.js';
 import { HttpError, sendHtml, redirect, readBody, parseForm, parseCookies, clientIp } from '../http.js';
-import { mask } from '../channels.js';
+import { mask, channelReady } from '../channels.js';
 import { PRESETS, FIELD_NAMES, ALGORITHMS } from '../gateways.js';
 import { AI_PROVIDERS } from '../ai.js';
 import { normalizeEmail } from '../../sdk/core/identity.js';
@@ -15,6 +15,7 @@ import { esc, money, ago, icon, csrfField, banner, page, group, row, switchRow, 
 export { esc };
 
 const SESSION_HOURS = 12;
+const HOURS = Array.from({ length: 24 }, (_, h) => [h, `${String(h).padStart(2, '0')}:00`]);
 const DUMMY_HASH = hashPassword('not-a-real-password-' + randomToken());
 const STAGE_LABEL = {
   registered: 'Signed up, no activity', browsed: 'Browsed, never bought', checkout_abandoned: 'Started checkout, never paid',
@@ -23,7 +24,7 @@ const STAGE_LABEL = {
 };
 const FIELD_LABEL = { ref: 'Payment reference', amount: 'Amount', currency: 'Currency', email: 'Customer email', phone: 'Customer phone', name: 'Customer name', time: 'Paid at', eventId: 'Unique event ID', kind: 'Sale or deposit tag' };
 
-export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger, blog }) {
+export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger, blog, scheduler, whatsapp }) {
   const secureCookie = config.publicUrl.startsWith('https://');
   const cookie = (v, maxAge) => `rk_session=${v}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
 
@@ -66,7 +67,8 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
 
   const back = (res, path, ok, err) => redirect(res, `${path}${path.includes('?') ? '&' : '?'}${ok ? 'ok=' + encodeURIComponent(ok) : 'err=' + encodeURIComponent(err)}`);
 
-  const acct = createAccountPages({ db, config, projects, engine, limiter, accounts, mailer, logger, requireSession, postCtx, sameOrigin, back });
+  const acct = createAccountPages({ db, config, projects, engine, limiter, accounts, mailer, logger, scheduler, requireSession, postCtx, sameOrigin, back });
+  acct.setSettingsPage((req, res, url, extra) => settingsPage(req, res, null, url, extra));
   const blogAdmin = createBlogAdmin({ blog, projects, config, requireAdmin: acct.requireAdmin, adminPost: acct.adminPost, back });
 
   // ================= auth =================
@@ -128,6 +130,21 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
       ['Messages sent', String(rev.messagesSent), 'All time'],
       ['Waiting for you', String(ctx.badge), ctx.badge ? '<a href="/dashboard/messages">Review drafts</a>' : 'No drafts to review'],
     ];
+    // First steps: shown until the essentials are done.
+    const has = (sql, ...a) => Boolean(db.get(sql, ...a));
+    const ch = projects.getChannels(p);
+    const steps = [
+      ['Add the RecoverKit script to your website', has('SELECT 1 FROM events WHERE project_id = ? AND layer = 1 LIMIT 1', p.id), '/dashboard/developers', 'One line before &lt;/body&gt;'],
+      ['Tell RecoverKit who your customers are', has('SELECT 1 FROM identities WHERE project_id = ? LIMIT 1', p.id), '/dashboard/developers', 'Call identify after sign-up or login, or connect your database'],
+      ['Record real purchases', Boolean(f.verified), '/dashboard/payments', p.gateway_mode === 'deposits' ? 'Call trackPurchase from your server when someone really buys' : 'Connect your payment gateway, or call trackPurchase'],
+      ['Connect WhatsApp, SMS or email', ['whatsapp', 'sms', 'email'].some((c) => channelReady(ch, c)), '/dashboard/channels', 'Where your follow-ups are sent from'],
+      ['Describe how you talk to customers', Boolean(p.voice_profile && p.voice_profile.trim()), '/dashboard/settings', 'So drafts sound like you'],
+      ['Bring in your past customers (optional)', has('SELECT 1 FROM connector_runs WHERE project_id = ? LIMIT 1', p.id), '/dashboard/developers', 'The read-only connector reads your existing database'],
+    ];
+    const done = steps.filter((s) => s[1]).length;
+    const essentialsDone = steps.slice(0, 5).every((s) => s[1]);
+    const checklist = essentialsDone ? '' : group(`Get set up · ${done} of ${steps.length} done`, steps.map(([label, ok, href, sub]) =>
+      row(ok ? `<span class="done">${label}</span>` : label, ok ? pill('Done', 'green') : '', { href: ok ? undefined : href, sub })), 'This list disappears once the first five are done.');
     const leadStages = ['registered', 'browsed', 'checkout_abandoned', 'funded_not_bought', 'bought_once', 'lapsed_repeat'];
     const custStages = ['new_customer', 'repeat_customer'];
     const max = Math.max(1, ...[...leadStages, ...custStages].map((k) => f[k] || 0));
@@ -136,7 +153,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     sendHtml(res, 200, page({
       title: 'Overview', active: 'overview', ctx,
       actions: `<form method="post" action="/dashboard/drafts">${csrfField(ctx)}<button class="btn prominent">Draft follow-ups</button></form>`,
-      body: `${banner(url.searchParams)}${warn}
+      body: `${banner(url.searchParams)}${checklist}${checklist ? '' : warn}
       <div class="tiles">${tiles.map(([k, v, s]) => `<div class="tile"><span class="tile-label">${k}</span><b class="tile-value">${v}</b><small>${s}</small></div>`).join('')}</div>
       ${group('People worth following up', leadStages.map((k) => funnelRow(k, 'accent')), `${totalLeads} people in total. Anonymous visitors not yet identified: ${Number(f.anonymous || 0)}.`)}
       ${group('Customers', custStages.map((k) => funnelRow(k, 'green')))}`,
@@ -172,7 +189,8 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
   function messagesPage(req, res, _p, url) {
     const ctx = requireSession(req);
     const pid = ctx.project.id;
-    const view = ['approved', 'history'].includes(url.searchParams.get('view')) ? url.searchParams.get('view') : 'waiting';
+    const view = ['approved', 'history', 'replies'].includes(url.searchParams.get('view')) ? url.searchParams.get('view') : 'waiting';
+    const nReplies = whatsapp ? whatsapp.unanswered(pid) : 0;
     const count = (st) => db.get(`SELECT COUNT(*) n FROM messages WHERE project_id = ? AND status = ?`, pid, st).n;
     const nApproved = count('approved');
     let body = '';
@@ -190,6 +208,15 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
       body = list.length ? `${group('', list.map((m) => row(esc(m.body.slice(0, 120)), pill(m.channel))), `Before sending, each person is checked again: anyone who has paid, opted out or was messaged in the last ${config.minDaysBetweenMessages} days is skipped.`)}
         <form method="post" action="/dashboard/send">${csrfField(ctx)}<button class="btn prominent wide">Send ${list.length} message${list.length === 1 ? '' : 's'}</button></form>`
         : empty('Nothing approved', 'Approve drafts in Waiting and they\'ll be ready to send here.');
+    } else if (view === 'replies') {
+      const list = whatsapp.listReplies(pid);
+      const ch = projects.getChannels(ctx.project).whatsapp;
+      body = list.length ? list.map((r) => {
+        const open = !r.is_stop && !r.replied_at && Date.now() - r.received_at < 24 * 3600e3;
+        return `<article class="card draft"><div class="meta">${pill('WhatsApp')} ${r.is_stop ? pill('Opted out', 'orange') : r.replied_at ? pill('Answered', 'green') : open ? pill('Needs a reply', 'accent') : pill('Older than 24 h')} <small>${esc(r.from_masked)} · ${ago(r.received_at)}${r.person_id ? '' : ' · not a known customer'}</small></div>
+          <p class="reply-text">${esc(r.body)}</p>${r.reply ? `<p class="reply-sent"><b>You:</b> ${esc(r.reply)}</p>` : ''}
+          ${open ? `<form method="post" action="/dashboard/replies/${esc(r.id)}">${csrfField(ctx)}<label class="sr-only" for="r-${esc(r.id)}">Your reply</label><textarea id="r-${esc(r.id)}" name="body" rows="2" maxlength="4096" placeholder="Write a reply"></textarea><div class="actions"><button class="btn prominent">Send on WhatsApp</button></div></form>` : ''}</article>`;
+      }).join('') : empty('No replies yet', ch?.appSecret ? 'When customers answer your WhatsApp follow-ups, their replies appear here. "STOP" replies opt them out automatically.' : 'Connect WhatsApp replies in Channels to see customers\' answers here.', ch?.appSecret ? '' : '<a class="btn tinted" href="/dashboard/channels">Set up WhatsApp replies</a>');
     } else {
       const list = db.all("SELECT * FROM messages WHERE project_id = ? AND status NOT IN ('draft','approved') ORDER BY created_at DESC LIMIT 100", pid);
       const tone = { sent: 'green', failed: 'red', skipped: 'orange', rejected: 'neutral', sending: 'orange' };
@@ -198,7 +225,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     }
     sendHtml(res, 200, page({
       title: 'Messages', active: 'messages', ctx,
-      body: `${banner(url.searchParams)}${segmented('Message status', [['waiting', `Waiting${ctx.badge ? ` (${ctx.badge})` : ''}`, '/dashboard/messages'], ['approved', `Approved${nApproved ? ` (${nApproved})` : ''}`, '/dashboard/messages?view=approved'], ['history', 'History', '/dashboard/messages?view=history']], view)}${body}`,
+      body: `${banner(url.searchParams)}${segmented('Message status', [['waiting', `Waiting${ctx.badge ? ` (${ctx.badge})` : ''}`, '/dashboard/messages'], ['approved', `Approved${nApproved ? ` (${nApproved})` : ''}`, '/dashboard/messages?view=approved'], ['replies', `Replies${nReplies ? ` (${nReplies})` : ''}`, '/dashboard/messages?view=replies'], ['history', 'History', '/dashboard/messages?view=history']], view)}${body}`,
     }));
   }
 
@@ -384,17 +411,23 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     const ctx = requireSession(req);
     const ch = projects.getChannels(ctx.project);
     const on = (v) => (v ? pill('Connected', 'green') : pill('Not set'));
+    const ready = (c) => on(channelReady(ch, c));
     const keep = 'Leave blank to keep the saved value.';
     sendHtml(res, 200, page({
       title: 'Channels', active: 'channels', ctx,
       subtitle: 'Where follow-ups are sent. RecoverKit tries WhatsApp, then SMS, then email.',
       body: `${banner(url.searchParams)}<form method="post" action="/dashboard/channels" autocomplete="off">${csrfField(ctx)}
-      ${group(`WhatsApp Cloud API ${on(ch.whatsapp)}`, [
+      ${group(`WhatsApp Cloud API ${ready('whatsapp')}`, [
         field('wa_accessToken', 'Access token', '', { type: 'password', max: 500 }), field('wa_phoneNumberId', 'Phone number ID', ch.whatsapp?.phoneNumberId || '', { max: 20 }),
         field('wa_templateName', 'Template name', ch.whatsapp?.templateName || '', { max: 100, hint: 'An approved template with one {{1}} body variable' }), field('wa_language', 'Template language', ch.whatsapp?.language || '', { placeholder: 'en', max: 10 }),
       ], keep)}
-      ${group(`SMS (Termii) ${on(ch.sms)}`, [field('sms_apiKey', 'API key', '', { type: 'password', max: 200 }), field('sms_senderId', 'Sender ID', ch.sms?.senderId || '', { max: 11 })], keep)}
-      ${group(`Email (Resend) ${on(ch.email)}`, [field('email_apiKey', 'API key', '', { type: 'password', max: 200 }), field('email_from', 'From', ch.email?.from || '', { placeholder: 'Ada <ada@yourshop.ng>', max: 200 })], keep)}
+      ${group(`WhatsApp replies ${on(ch.whatsapp?.appSecret)}`, [
+        field('wa_appSecret', 'Meta app secret', '', { type: 'password', max: 200, hint: 'Meta app dashboard → App settings → Basic' }),
+        `<div class="row field stacked"><span class="row-label">Callback URL<small>Meta app → WhatsApp → Configuration → Webhook</small></span><input class="copy" readonly value="${esc(whatsapp.webhookUrl(ctx.project.id))}" aria-label="Callback URL"></div>`,
+        `<div class="row field stacked"><span class="row-label">Verify token</span><input class="copy" readonly value="${esc(whatsapp.verifyToken(ctx.project.id))}" aria-label="Verify token"></div>`,
+      ], 'Paste the callback URL and verify token into Meta, then subscribe to the <b>messages</b> field. Replies appear under Messages → Replies, and "STOP" replies opt people out at once. ' + keep)}
+      ${group(`SMS (Termii) ${ready('sms')}`, [field('sms_apiKey', 'API key', '', { type: 'password', max: 200 }), field('sms_senderId', 'Sender ID', ch.sms?.senderId || '', { max: 11 })], keep)}
+      ${group(`Email (Resend) ${ready('email')}`, [field('email_apiKey', 'API key', '', { type: 'password', max: 200 }), field('email_from', 'From', ch.email?.from || '', { placeholder: 'Ada <ada@yourshop.ng>', max: 200 })], keep)}
       ${group('', [switchRow('console', 'Test mode', Boolean(ch.console), 'Write messages to the server log instead of sending them')])}
       <button class="btn prominent wide">Save channels</button></form>`,
     }));
@@ -409,7 +442,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
       for (const f of fields) { const v = (form[`${prefix}_${f}`] || '').trim(); if (v) { next[f] = v; touched = true; } }
       return touched ? next : null;
     };
-    const wa = pick('whatsapp', 'wa', ['accessToken', 'phoneNumberId', 'templateName', 'language']);
+    const wa = pick('whatsapp', 'wa', ['accessToken', 'phoneNumberId', 'templateName', 'language', 'appSecret']);
     if (wa) projects.setChannel(ctx.project.id, 'whatsapp', wa);
     const sms = pick('sms', 'sms', ['apiKey', 'senderId']);
     if (sms) projects.setChannel(ctx.project.id, 'sms', sms);
@@ -453,9 +486,28 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
         ...keys.map((k) => `<div class="row"><span class="row-label"><code>${esc(k.id)}</code><small>${esc(k.label)} · created ${ago(k.created_at)}</small></span><span class="row-value">${k.revoked_at ? pill('Revoked') : `<form method="post" action="/dashboard/keys/${esc(k.id)}/revoke">${csrfField(ctx)}<button class="btn plain destructive small">Revoke</button></form>`}</span></div>`),
       ], 'For your server only. Never put a secret key in a website or app.')}
       <form method="post" action="/dashboard/keys">${csrfField(ctx)}<button class="btn tinted">Create a secret key</button></form>
+      <form method="post" action="/dashboard/automation">${csrfField(ctx)}
+        ${group('Automatic follow-ups', [
+          switchRow('autoDraft', 'Draft follow-ups every day', Boolean(p.auto_draft), 'Up to 20 a day, for the people most worth following up'),
+          switchRow('autoSend', 'Send approved messages automatically', Boolean(p.auto_send), 'Only during your sending hours'),
+          switchRow('notifyEmail', 'Email me when drafts or replies are waiting', Boolean(p.notify_email)),
+          select('sendFrom', 'Send from', HOURS, p.send_from),
+          select('sendTo', 'Until', HOURS, p.send_to),
+        ], `Lagos time. ${p.require_approval ? 'Nothing is sent until you approve it.' : '<b>Approve every message is off</b>, so drafts are sent without you reading them first.'}`)}
+        <button class="btn tinted">Save</button></form>
       ${acct.passwordGroup(ctx)}
+      ${acct.teamGroups(ctx)}
       <div class="mobile-only">${ctx.user.is_admin ? group('', [row('Businesses (admin)', '', { href: '/admin' })]) : ''}<form method="post" action="/logout">${csrfField(ctx)}<button class="btn plain destructive wide">Log out ${esc(ctx.user.email)}</button></form></div>`,
     }));
+  }
+
+  async function automationAction(req, res) {
+    const { ctx, form } = await postCtx(req);
+    try {
+      projects.update(ctx.project.id, { autoDraft: form.autoDraft === '1', autoSend: form.autoSend === '1', notifyEmail: form.notifyEmail === '1', sendFrom: form.sendFrom, sendTo: form.sendTo });
+      projects.audit(ctx.project.id, ctx.user.email, 'automation');
+      back(res, '/dashboard/settings', 'Saved.');
+    } catch (e) { back(res, '/dashboard/settings', null, e.message); }
   }
 
   async function settingsAction(req, res) {
@@ -542,6 +594,13 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     back(res, '/dashboard/messages', `Drafted ${r.drafted}.${r.skipped ? ` Skipped ${r.skipped}.` : ''}${extra}`);
   }
 
+  async function replyAction(req, res, params) {
+    const { ctx, form } = await postCtx(req, 16 * 1024);
+    if (!limiter.hit(`wa-reply:${ctx.project.id}`, 120, 60 * 60e3)) return back(res, '/dashboard/messages?view=replies', null, 'Too many replies this hour.');
+    try { await whatsapp.answer(ctx.project.id, params.id, form.body, ctx.user.email); back(res, '/dashboard/messages?view=replies', 'Reply sent.'); }
+    catch (e) { back(res, '/dashboard/messages?view=replies', null, e.message); }
+  }
+
   async function approveAction(req, res, params) {
     const { ctx, form } = await postCtx(req);
     try { outreach.approve(ctx.project.id, params.id, ctx.user.email, form.body); back(res, '/dashboard/messages', 'Approved.'); }
@@ -565,7 +624,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     loginPage, login, logout, overview, leadsPage, messagesPage,
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
     aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction,
-    settingsPage, settingsAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, sendAction,
+    settingsPage, settingsAction, automationAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, replyAction, sendAction,
     developersPage, developerKeyAction, sharedGuidePage, docsPage, ...acct, ...blogAdmin, isSignedIn: (req) => Boolean(session(req)),
   };
 }

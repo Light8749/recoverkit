@@ -36,6 +36,10 @@ export function readConfig(env = process.env) {
     // RK_SIGNUP=open lets businesses create their own account at /signup (needs email set up). Default: invite-only.
     signup: env.RK_SIGNUP === 'open' ? 'open' : 'off',
     // Google Search Console "HTML file" verification, e.g. RK_GOOGLE_VERIFY=google4cdb70df215417e3
+    // Shown in the Privacy Policy and Terms: who runs this server and how to reach them.
+    operatorName: (env.RK_OPERATOR_NAME || '').trim().slice(0, 120) || null,
+    contactEmail: /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test((env.RK_CONTACT_EMAIL || '').trim()) ? env.RK_CONTACT_EMAIL.trim() : null,
+    backupDir: env.RK_BACKUP_DIR || null,
     googleVerify: /^google[0-9a-f]{8,32}$/.test(env.RK_GOOGLE_VERIFY || '') ? env.RK_GOOGLE_VERIFY : null,
     // Lets a business point the AI at a private address (e.g. Ollama on this machine). Off by default (SSRF).
     allowPrivateAiUrls: env.RK_ALLOW_PRIVATE_AI_URLS === '1',

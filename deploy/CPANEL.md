@@ -91,6 +91,29 @@ To let businesses create their own account at `https://recover.yourvtusite.com/s
 RK_SIGNUP=open
 ```
 
+## 7. Turn on automatic follow-ups and backups (cron)
+
+cPanel puts the app to sleep when nobody visits, so add a cron job to run RecoverKit's background work: daily drafts, sending during each business's hours, owner emails, and daily database backups.
+
+cPanel → **Cron Jobs** → **Add New Cron Job** → Common settings: **Once Per Fifteen Minutes** → Command (use your own paths; the Node version folder is the one from step 4):
+
+```
+cd /home/USER/recoverkit && /home/USER/nodevenv/recoverkit/24/bin/node src/cli.js tick >> tick.log 2>&1
+```
+
+The Businesses page shows when it last ran. Backups go to `recoverkit/backups/` (the last 7 days). Download one now and then, together with `.env`: a backup is useless without the `RK_MASTER_KEY` in `.env`.
+
+## 8. Your details in the Privacy Policy and Terms
+
+The website has a Privacy Policy (`/privacy`) and Terms (`/terms`). Add who runs the service and how to reach you to `.env`, then Restart:
+
+```
+RK_OPERATOR_NAME=Your Name or Company Ltd
+RK_CONTACT_EMAIL=support@yourvtusite.com
+```
+
+They're a good starting point written for how RecoverKit works, not legal advice: have a lawyer look at them before you rely on them.
+
 ## Keep it safe
 
 - **Back up** `recoverkit/.env` and `recoverkit/recoverkit.db` regularly (cPanel → **Backup**, or download them).

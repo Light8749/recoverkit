@@ -4,7 +4,8 @@
 //   npm run cli -- create-user <projectId> <email>       create a dashboard login (prompts for password)
 //   npm run cli -- make-admin <email>                    let this login open the Admin pages (add businesses)
 //   npm run cli -- reset-link <email>                    print a one-hour password reset link
-//   npm run cli -- send <projectId>                      send approved messages (for cron)
+//   npm run cli -- tick                                  background work: drafts, sending, emails, backups (cron, every 15 min)
+//   npm run cli -- send <projectId>                      send approved messages now
 import { writeFileSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline';
@@ -62,10 +63,13 @@ try {
     const token = app.accounts.issue(u.id, u.password_hash ? 'reset' : 'invite');
     app.projects.audit(u.project_id, 'cli', 'reset_link_created', u.email);
     console.log(`${config.publicUrl}/reset/${token}\n(Works once, for ${u.password_hash ? '1 hour' : '7 days'}.)`);
+  } else if (cmd === 'tick') {
+    const r = await app.scheduler.tick();
+    console.log(new Date().toISOString(), JSON.stringify(r));
   } else if (cmd === 'send') {
     console.log(await app.outreach.sendApproved(args[0]));
   } else {
-    console.log('commands: init | create-project <name> [sales|deposits] | create-user <projectId> <email> | make-admin <email> | reset-link <email> | send <projectId>');
+    console.log('commands: init | create-project <name> [sales|deposits] | create-user <projectId> <email> | make-admin <email> | reset-link <email> | tick | send <projectId>');
   }
 } catch (e) {
   console.error('Error:', e.message);
