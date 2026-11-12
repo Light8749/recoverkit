@@ -242,6 +242,10 @@ Any business can choose its model under **Dashboard → AI model**, and the choi
 
 Type any model name your provider offers. API keys are stored encrypted and never shown again. **Test with a sample lead** runs one real draft and shows the result or the exact error. Whatever the provider, the model never receives names, emails or phone numbers. If it fails, or writes a link or phone number, a template is used instead.
 
+## Message style (each business's own psychology)
+
+**Setup → Message style:** a playbook that applies to every message, and for each kind of customer (funded but never bought, signed up only, started a checkout, browsed, bought once, regular gone quiet) the business's own rules and up to 5 example messages. The AI follows the playbook and rules, imitates the examples' tone, length and approach, and still writes a fresh message per person. Only the matching customer type's rules and examples are sent. RecoverKit's safety rules always apply on top (no invented facts, discounts or deadlines, no links or phone numbers, no pressure), and examples with links or phone numbers are refused. **Try it** writes a sample for any type with a made-up customer.
+
 ## Leads, scoring and confidence
 
 - **Stages:** registered → browsed → checkout abandoned → funded not bought → new customer → repeat customer; customers with no purchase for 30 days become *bought once, gone quiet* or *regulars gone quiet*.

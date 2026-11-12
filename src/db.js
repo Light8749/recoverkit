@@ -242,7 +242,7 @@ export function openDb(path) {
   // Migration: automatic follow-ups (per business). Hours are Lagos time.
   const projCols = db.prepare('PRAGMA table_info(projects)').all().map((c) => c.name);
   for (const [col, def] of [['auto_draft', 'INTEGER NOT NULL DEFAULT 1'], ['auto_send', 'INTEGER NOT NULL DEFAULT 1'], ['notify_email', 'INTEGER NOT NULL DEFAULT 1'],
-    ['send_from', 'INTEGER NOT NULL DEFAULT 9'], ['send_to', 'INTEGER NOT NULL DEFAULT 19'], ['last_auto_draft_day', "TEXT NOT NULL DEFAULT ''"], ['last_reply_notice_at', 'INTEGER NOT NULL DEFAULT 0']]) {
+    ['style_json', "TEXT NOT NULL DEFAULT ''"], ['send_from', 'INTEGER NOT NULL DEFAULT 9'], ['send_to', 'INTEGER NOT NULL DEFAULT 19'], ['last_auto_draft_day', "TEXT NOT NULL DEFAULT ''"], ['last_reply_notice_at', 'INTEGER NOT NULL DEFAULT 0']]) {
     if (!projCols.includes(col)) db.exec(`ALTER TABLE projects ADD COLUMN ${col} ${def}`);
   }
   // Migration: users.is_admin marks whoever runs this RecoverKit server (Admin pages).

@@ -154,11 +154,13 @@ export function createProjects(db, keys) {
     return id;
   }
 
+  const setStyle = (projectId, style) => db.run('UPDATE projects SET style_json = ? WHERE id = ?', JSON.stringify(style), projectId);
+
   const audit = (projectId, actor, action, detail = '') =>
     db.run('INSERT INTO audit_log (project_id, actor, action, detail, at) VALUES (?,?,?,?,?)', projectId, actor, action, String(detail).slice(0, 500), Date.now());
 
   return {
-    create, createSecretKey, revokeSecretKey, byPublicKey, bySecretKey, byId, update, getChannels, setChannel, createUser, audit,
+    setStyle, create, createSecretKey, revokeSecretKey, byPublicKey, bySecretKey, byId, update, getChannels, setChannel, createUser, audit,
     addGateway, updateGateway, deleteGateway, getGateway, listGateways, getAiSettings, setAiSettings, AI_PROVIDERS,
   };
 }

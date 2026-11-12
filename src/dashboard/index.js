@@ -4,6 +4,7 @@ import { randomToken, sha256Hex, safeEqual, verifyPassword, hashPassword, signTo
 import { HttpError, sendHtml, redirect, readBody, parseForm, parseCookies, clientIp } from '../http.js';
 import { mask, channelReady } from '../channels.js';
 import { EMAIL_PROVIDERS, SMTP_PORTS, validateEmailConfig, sendEmail } from '../email.js';
+import { STAGES, LIMITS, validateStyle, parseStyle } from '../style.js';
 import { PRESETS, FIELD_NAMES, ALGORITHMS } from '../gateways.js';
 import { AI_PROVIDERS } from '../ai.js';
 import { normalizeEmail } from '../../sdk/core/identity.js';
@@ -410,6 +411,50 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     else back(res, '/dashboard/ai', null, `Test failed: ${r.error}`);
   }
 
+  // ================= message style =================
+  function stylePage(req, res, _p, url, extra = '') {
+    const ctx = requireSession(req);
+    const st = parseStyle(ctx.project.style_json);
+    const area = (name, label, sub, value, rows, max) => `<label class="row field stacked"><span class="row-label">${label}${sub ? `<small>${sub}</small>` : ''}</span><textarea name="${name}" rows="${rows}" maxlength="${max}">${esc(value)}</textarea></label>`;
+    const stageGroups = Object.entries(STAGES).map(([k, v]) => group(esc(v.label), [
+      area(`rules_${k}`, 'Your rules for these customers', esc(v.hint) + ' What should a message to them do, and avoid?', st.stages[k]?.rules || '', 3, LIMITS.rules),
+      area(`examples_${k}`, 'Example messages', `Up to ${LIMITS.examples}, with a blank line between them. Use {first_name} for their name. No links or phone numbers.`, (st.stages[k]?.examples || []).join('\n\n'), 6, LIMITS.examples * (LIMITS.example + 2)),
+    ])).join('');
+    sendHtml(res, 200, page({
+      title: 'Message style', active: 'style', ctx,
+      subtitle: 'Teach the AI how you persuade your customers. It follows your rules and copies the style of your examples, but writes each message fresh for the person.',
+      body: `${banner(url.searchParams)}${extra}
+      <form method="post" action="/dashboard/style">${csrfField(ctx)}
+        ${group('Your playbook (every message)', [area('playbook', 'How you talk to customers and what works for you', 'For example: "Always ask one question. Mention the exact amount. Never say kindly. Sign as Moses. People reply more to voice-note style messages than formal ones."', st.playbook, 7, LIMITS.playbook)],
+          'RecoverKit\'s safety rules always apply on top: no invented discounts or facts, no links or phone numbers in the text, no pressure or guilt.')}
+        ${stageGroups}
+        <button class="btn prominent wide">Save message style</button></form>
+      <form method="post" action="/dashboard/style/test">${csrfField(ctx)}
+        ${group('Try it', [select('stage', 'Write a sample for', Object.entries(STAGES).map(([k, v]) => [k, v.label]), url.searchParams.get('stage') || 'funded_not_bought')], 'Uses your AI model and your saved style, with a made-up customer called Ada.')}
+        <button class="btn tinted">Show a sample message</button></form>`,
+    }));
+  }
+
+  async function styleAction(req, res) {
+    const { ctx, form } = await postCtx(req, 128 * 1024);
+    try {
+      projects.setStyle(ctx.project.id, validateStyle(form));
+      projects.audit(ctx.project.id, ctx.user.email, 'message_style');
+      back(res, '/dashboard/style', 'Saved. New drafts will use your style. Use "Try it" below to see one.');
+    } catch (e) { back(res, '/dashboard/style', null, e.message); }
+  }
+
+  async function styleTestAction(req, res, _p, url) {
+    const { ctx, form } = await postCtx(req);
+    if (!limiter.hit(`aitest:${ctx.project.id}`, 10, 60 * 60e3)) return back(res, '/dashboard/style', null, 'Preview limit reached. Try again in an hour.');
+    const stage = Object.hasOwn(STAGES, form.stage || '') ? form.stage : 'funded_not_bought';
+    const r = await drafter.test(projects.byId(ctx.project.id), resolveAi(ctx.project), stage);
+    const box = r.ok
+      ? `<div class="banner ok" role="status"><span><b>Sample for "${esc(STAGES[stage].label)}":</b><br>${esc(r.message)}</span></div>`
+      : `<div class="banner err" role="alert"><span>The preview failed: ${esc(r.error)}</span></div>`;
+    stylePage(req, res, null, new URL(`/dashboard/style?stage=${stage}`, 'http://x'), box);
+  }
+
   // ================= channels =================
   function channelsPage(req, res, _p, url) {
     const ctx = requireSession(req);
@@ -500,7 +545,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     sendHtml(res, 200, page({
       title: 'Settings', active: 'settings', ctx,
       body: `${banner(url.searchParams)}${extra}
-      <div class="mobile-only">${group('', [row('Payments', '', { href: '/dashboard/payments' }), row('AI model', '', { href: '/dashboard/ai' }), row('Channels', '', { href: '/dashboard/channels' }), row('Developers', '', { href: '/dashboard/developers' })])}</div>
+      <div class="mobile-only">${group('', [row('Payments', '', { href: '/dashboard/payments' }), row('AI model', '', { href: '/dashboard/ai' }), row('Message style', '', { href: '/dashboard/style' }), row('Channels', '', { href: '/dashboard/channels' }), row('Developers', '', { href: '/dashboard/developers' })])}</div>
       <form method="post" action="/dashboard/settings">${csrfField(ctx)}
         ${group('Your business', [
           `<label class="row field stacked"><span class="row-label">Your voice<small>How you talk to customers. Slang or Pidgin welcome. Mention anything that's genuinely limited.</small></span><textarea name="voiceProfile" rows="4" maxlength="2000">${esc(p.voice_profile)}</textarea></label>`,
@@ -681,7 +726,7 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
   return {
     loginPage, login, logout, overview, leadsPage, messagesPage,
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
-    aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction, testEmailAction,
+    aiPage, aiSaveAction, aiResetAction, aiTestAction, stylePage, styleAction, styleTestAction, channelsPage, channelsAction, testEmailAction,
     settingsPage, settingsAction, automationAction, newKeyAction, revokeKeyAction, draftsAction, discardDraftsAction, approveAction, rejectAction, replyAction, sendAction,
     developersPage, developerKeyAction, installCodeAction, sharedGuidePage, docsPage, ...acct, ...blogAdmin, isSignedIn: (req) => Boolean(session(req)),
   };

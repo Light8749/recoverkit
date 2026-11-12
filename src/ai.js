@@ -6,6 +6,7 @@
 // Privacy: no provider ever sees names, emails or phone numbers. The model
 // writes a {first_name} placeholder that is filled in locally afterwards.
 import { lookup } from 'node:dns/promises';
+import { parseStyle, stylePrompt } from './style.js';
 import { BlockList, isIP } from 'node:net';
 
 export const AI_PROVIDERS = {
@@ -279,12 +280,21 @@ export function buildPrompt({ lead, project, channel }) {
     today: WEEKDAYS[new Date(Date.now() + 3600e3).getUTCDay()],
   };
   return {
-    system: `${SYSTEM}\n\nBusiness: ${project.name}\nThe business's voice and notes (from the business owner):\n${project.voice_profile || '(none given: friendly, plain English)'}`,
+    system: `${SYSTEM}\n\nBusiness: ${project.name}\nThe business's voice and notes (from the business owner):\n${project.voice_profile || '(none given: friendly, plain English)'}${stylePrompt(parseStyle(project.style_json), lead.stage)}`,
     user: `Write one ${channel} message for this person.\n<journey>\n${JSON.stringify(brief)}\n</journey>`,
   };
 }
 
-const SAMPLE_LEAD = { leadType: 'never_bought', stage: 'funded_not_bought', purchases: 0, lastPurchaseDaysAgo: null, idleDays: 2, cartValue: 50000, journey: [{ daysAgo: 3, type: 'registered' }, { daysAgo: 2, type: 'wallet_funded' }] };
+const SAMPLE_LEAD = { leadType: 'never_bought', stage: 'funded_not_bought', purchases: 0, lastPurchaseDaysAgo: null, idleDays: 2, cartValue: 50000, journey: [{ daysAgo: 3, type: 'registered' }, { daysAgo: 2, type: 'wallet_funded', amount: 200000 }] };
+/** One made-up customer per stage, for previews. */
+export const SAMPLE_LEADS = {
+  funded_not_bought: SAMPLE_LEAD,
+  registered: { leadType: 'never_bought', stage: 'registered', purchases: 0, idleDays: 6, journey: [{ daysAgo: 6, type: 'registered' }] },
+  checkout_abandoned: { leadType: 'never_bought', stage: 'checkout_abandoned', purchases: 0, idleDays: 1, cartValue: 150000, journey: [{ daysAgo: 4, type: 'registered' }, { daysAgo: 1, type: 'checkout_started', amount: 150000 }] },
+  browsed: { leadType: 'never_bought', stage: 'browsed', purchases: 0, idleDays: 3, journey: [{ daysAgo: 5, type: 'registered' }, { daysAgo: 3, type: 'page_view', name: '/pricing' }] },
+  bought_once: { leadType: 'lapsed', stage: 'bought_once', purchases: 1, lastPurchaseDaysAgo: 24, idleDays: 24, journey: [{ daysAgo: 40, type: 'registered' }, { daysAgo: 24, type: 'purchase', amount: 100000 }] },
+  lapsed_repeat: { leadType: 'lapsed', stage: 'lapsed_repeat', purchases: 7, lastPurchaseDaysAgo: 35, idleDays: 35, journey: [{ daysAgo: 70, type: 'purchase', amount: 50000 }, { daysAgo: 52, type: 'purchase', amount: 50000 }, { daysAgo: 35, type: 'purchase', amount: 100000 }] },
+};
 
 /**
  * deps: { fetch, anthropicFactory(apiKey), allowPrivateAiUrls, resolver, logger }
@@ -313,10 +323,11 @@ export function createDrafter({ resolveAi, logger = console, ...deps }) {
   }
 
   /** Dashboard "Test model" button: one sample draft, with the real error shown if it fails. */
-  async function test(project, settings) {
-    if (settings.provider === 'none') return { ok: true, message: placeholderFill(templateDraft(SAMPLE_LEAD).message, { firstName: 'Ada' }) };
+  async function test(project, settings, stage = 'funded_not_bought') {
+    const lead = SAMPLE_LEADS[stage] || SAMPLE_LEAD;
+    if (settings.provider === 'none') return { ok: true, message: placeholderFill(templateDraft(lead).message, { firstName: 'Ada' }) };
     try {
-      const out = await generateDraftJson(settings, buildPrompt({ lead: SAMPLE_LEAD, project, channel: 'whatsapp' }), deps);
+      const out = await generateDraftJson(settings, buildPrompt({ lead, project, channel: 'whatsapp' }), deps);
       const problem = checkDraft(out?.message, 'whatsapp');
       if (problem) return { ok: false, error: `the model replied, but its draft was rejected (${problem})` };
       return { ok: true, message: placeholderFill(out.message, { firstName: 'Ada' }) };
