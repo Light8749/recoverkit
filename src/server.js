@@ -27,6 +27,7 @@ import { landingPage, robotsTxt, sitemapXml, llmsTxt, blogIndexPage, blogPostPag
 import { createBlog } from './blog.js';
 import { createScheduler } from './scheduler.js';
 import { createWhatsApp } from './whatsapp.js';
+import { createInstall } from './install.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -60,6 +61,8 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
   const ingest = createIngest(deps);
   const webhooks = createWebhooks(deps);
   const connector = createConnectorApi({ ...deps, requireSecret: ingest.requireSecret, deps: { fetch, anthropicFactory, resolver, allowPrivateAiUrls: config.allowPrivateAiUrls } });
+  const install = createInstall({ db, config, projects, limiter });
+  deps.install = install;
   const whatsapp = createWhatsApp({ db, keys, config, projects, people, limiter, fetch, logger });
   deps.whatsapp = whatsapp;
   const scheduler = createScheduler({ db, config, projects, outreach, mailer, logger });
@@ -98,6 +101,10 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/v1/server/erase', ingest.serverErase)
     .add('POST', '/v1/connector/suggest', connector.suggest)
     .add('POST', '/v1/connector/sync', connector.sync)
+    .add('POST', '/v1/connector/claim', install.claim)
+    .add('GET', '/install.php', (_q, res) => send(res, 200, install.installerScript(), {
+      'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': 'attachment; filename="recoverkit-install.php"', 'Cache-Control': 'no-cache',
+    }))
     .add('POST', '/v1/webhooks/:gatewayId', webhooks.receive)
     .add('GET', '/v1/whatsapp/:projectId', whatsapp.verify)
     .add('POST', '/v1/whatsapp/:projectId', whatsapp.receive)
@@ -165,6 +172,7 @@ export async function createApp({ config, fetch = globalThis.fetch, anthropicFac
     .add('POST', '/dashboard/channels', dash.channelsAction)
     .add('GET', '/dashboard/developers', dash.developersPage)
     .add('POST', '/dashboard/developers/key', dash.developerKeyAction)
+    .add('POST', '/dashboard/developers/install-code', dash.installCodeAction)
     .add('GET', '/dashboard/settings', dash.settingsPage)
     .add('POST', '/dashboard/settings', dash.settingsAction)
     .add('POST', '/dashboard/automation', dash.automationAction)

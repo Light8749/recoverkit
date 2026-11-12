@@ -204,6 +204,16 @@ CREATE TABLE IF NOT EXISTS inbound (
 );
 CREATE INDEX IF NOT EXISTS inbound_project ON inbound(project_id, received_at);
 
+-- One-time install codes: a developer runs one command with the code, and the connector gets its own keys.
+CREATE TABLE IF NOT EXISTS install_codes (
+  code_hash TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+);
+
 -- Background jobs: a lease so the app and a cron run never work at the same time.
 CREATE TABLE IF NOT EXISTS jobs (
   name TEXT PRIMARY KEY,

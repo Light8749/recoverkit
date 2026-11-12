@@ -177,16 +177,16 @@ final class RecoverKitConnector
         if ($this->driver === 'sqlite') {
             foreach ($this->select("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name") as $r) {
                 $cols = [];
-                foreach ($this->pdo->query('PRAGMA table_info(' . $this->q($r['name']) . ')')->fetchAll() as $c) $cols[] = ['name' => $c['name'], 'type' => strtolower((string)$c['type'])];
+                foreach ($this->pdo->query('PRAGMA table_info(' . $this->q($r['name']) . ')')->fetchAll() as $c) $cols[] = ['name' => $c['name'], 'type' => strtolower((string)$c['type']), 'nullable' => !$c['notnull'] && !$c['pk']];
                 $tables[$r['name']] = ['name' => $r['name'], 'columns' => $cols];
             }
         } else {
             $schemaCond = $this->driver === 'mysql' ? 'table_schema = DATABASE()' : 'table_schema = current_schema()';
-            foreach ($this->select("SELECT table_name AS t, column_name AS c, data_type AS d FROM information_schema.columns WHERE $schemaCond ORDER BY table_name, ordinal_position") as $r) {
-                $t = $r['t'] ?? $r['T'] ?? ''; $c = $r['c'] ?? $r['C'] ?? ''; $d = $r['d'] ?? $r['D'] ?? '';
+            foreach ($this->select("SELECT table_name AS t, column_name AS c, data_type AS d, is_nullable AS n FROM information_schema.columns WHERE $schemaCond ORDER BY table_name, ordinal_position") as $r) {
+                $t = $r['t'] ?? $r['T'] ?? ''; $c = $r['c'] ?? $r['C'] ?? ''; $d = $r['d'] ?? $r['D'] ?? ''; $n = $r['n'] ?? $r['N'] ?? 'YES';
                 if (!preg_match(self::NAME_RE, $t) || !preg_match(self::NAME_RE, $c)) continue;
                 $tables[$t]['name'] = $t;
-                $tables[$t]['columns'][] = ['name' => $c, 'type' => strtolower((string)$d)];
+                $tables[$t]['columns'][] = ['name' => $c, 'type' => strtolower((string)$d), 'nullable' => strtoupper((string)$n) !== 'NO'];
             }
         }
         foreach ($tables as $name => &$t) {
@@ -243,6 +243,19 @@ final class RecoverKitConnector
             'firstName' => self::findCol($people, ['/^(first_?name|fname|firstname)$/i', '/^(name|full_?name|username)$/i']),
             'createdAt' => self::findCol($people, ['/^(created_at|createdat|date_joined|registered_at|user_registered|signup_date|reg_date|created|date_created)$/i', '/created|joined|regist/i']),
         ];
+        // Leave out banned and deleted accounts: 0/1 flag columns that are never empty, or a status column with "active".
+        $mapping['people']['filters'] = [];
+        foreach ($people['columns'] as $c) {
+            if (count($mapping['people']['filters']) >= 2) break;
+            if (preg_match('/^(is_)?(banned|deleted|blocked|suspended|disabled|deactivated)$/i', $c['name']) && preg_match('/int|bool|bit/', $c['type']) && empty($c['nullable'])) {
+                $mapping['people']['filters'][] = ['column' => $c['name'], 'values' => ['0']];
+            }
+        }
+        $ps = self::findCol($people, ['/^(status|account_status|user_status|state)$/i']);
+        if ($ps && in_array('active', array_map('strtolower', $people['values'][$ps] ?? []), true)) {
+            $mapping['people']['filters'][] = ['column' => $ps, 'values' => array_values(array_filter($people['values'][$ps], fn($v) => strtolower($v) === 'active'))];
+        }
+
         $userPat = ['/^(user|customer|member|account|client)_?id$/i', '/^uid$/i', '/^userid$/i'];
         $timePat = ['/^(paid_at|completed_at|created_at|createdat|date|transaction_date|timestamp|created)$/i', '/date|time|_at$/i'];
         $amountPat = ['/^(amount|total|amount_paid|price|value|total_amount|grand_total)$/i', '/amount|total|price/i'];
@@ -259,6 +272,19 @@ final class RecoverKitConnector
             $ok = $status ? self::successValues($t, $status) : [];
             if ($ok) $filters[] = ['column' => $status, 'values' => $ok];
             $unit = preg_match('/decimal|numeric|double|float|real|money/', (string)self::typeOf($t, $amount)) ? 'major' : 'minor';
+            // A ledger table (one row per wallet movement) says what each row is in a type column: classify
+            // those values instead of guessing from the table name ("Data Purchase" is a sale, "deposit" isn't).
+            $typeCol = self::findCol($t, ['/^(transaction_type|txn_type|trans_type|tx_type|type|kind|category|service_type|service|purpose|narration_type)$/i']);
+            $kinds = $typeCol ? self::classifyTypes($t['values'][$typeCol] ?? []) : ['sale' => [], 'deposit' => []];
+            if ($amount && ($kinds['sale'] || $kinds['deposit'])) {
+                $ledger = ['table' => $t['name'], 'key' => self::findCol($t, ['/^id$/i', '/^(reference|ref|transaction_id|txn_id)$/i']), 'userColumn' => $user, 'timeColumn' => $time,
+                    'amountColumn' => $amount, 'amountUnit' => $unit, 'emailColumn' => '', 'phoneColumn' => ''];
+                // "auto": at every sync the type list is checked again, so types added later still count.
+                if ($kinds['sale']) $mapping['conversions'][] = $ledger + ['name' => 'purchases', 'filters' => array_merge($filters, [['column' => $typeCol, 'values' => $kinds['sale'], 'auto' => 'sale']]),
+                    'refColumn' => self::findCol($t, ['/^(transaction_reference|reference|ref|payment_reference|transaction_ref|tx_ref|txn_ref)$/i'])];
+                if ($kinds['deposit']) $mapping['signals'][] = $ledger + ['name' => 'wallet_deposits', 'kind' => 'deposit', 'filters' => array_merge($filters, [['column' => $typeCol, 'values' => $kinds['deposit'], 'auto' => 'deposit']])];
+                continue;
+            }
             $base = ['name' => strtolower($t['name']), 'table' => $t['name'], 'key' => self::findCol($t, ['/^id$/i', '/^(reference|ref|transaction_id|txn_id)$/i']),
                 'userColumn' => $user, 'timeColumn' => $time, 'amountColumn' => $amount, 'amountUnit' => $unit, 'filters' => $filters,
                 // Guest checkouts: the email/phone typed on the order itself.
@@ -313,6 +339,22 @@ final class RecoverKitConnector
             'signals' => [$base + ['name' => 'woocommerce_unpaid_order', 'kind' => 'checkout', 'filters' => [['column' => 'post_type', 'values' => ['shop_order']], ['column' => 'post_status', 'values' => $unpaid]]]],
             'notes' => 'Built-in WooCommerce mapping (older order storage in ' . $prefix . 'posts and ' . $prefix . 'postmeta). Paid = completed or processing; pending/failed/on-hold orders are abandoned checkouts. Guest orders are matched by billing email and phone.',
         ], 'WooCommerce (older order storage, ' . $prefix . 'posts + ' . $prefix . 'postmeta)'];
+    }
+
+    /**
+     * Sort a ledger's type labels: real purchases, wallet deposits, and everything else (withdrawals,
+     * payouts, commissions, refunds, rewards, transfers, fees), which is neither and is left out.
+     */
+    public static function classifyTypes(array $values): array
+    {
+        $out = ['sale' => [], 'deposit' => []];
+        foreach ($values as $v) {
+            $s = strtolower((string)$v);
+            if (preg_match('/withdraw|payout|pay_out|commission|refund|revers|reward|bonus|cashback|transfer|charge|fee|earning|settle|adjust|debit_note|referral|interest|penalt|chargeback/', $s)) continue;
+            if (preg_match('/deposit|fund|top.?up|wallet.?(credit|load)|virtual.?account|^credit$|load.?wallet|add.?money/', $s)) { $out['deposit'][] = $v; continue; }
+            if (preg_match('/purchase|payment|subscri|airtime|\bdata\b|bill|cable|electric|recharge|order|\bbet|stake|rent|ticket|\bpin\b|token|\bbuy|sale|booking|exam|education|tv\b|vtu|bundle|insurance|loan_repay|plan/', $s)) $out['sale'][] = $v;
+        }
+        return $out;
     }
 
     private static function typeOf(array $t, string $col): string
@@ -374,7 +416,7 @@ final class RecoverKitConnector
             foreach (array_slice((array)($s['filters'] ?? []), 0, 3) as $f) {
                 $c = $has($t, $f['column'] ?? '');
                 $v = array_values(array_filter((array)($f['values'] ?? []), fn($x) => is_string($x) && strlen($x) <= 64));
-                if ($c && $v) $o['filters'][] = ['column' => $c, 'values' => array_slice($v, 0, 20)];
+                if ($c && $v) $o['filters'][] = ['column' => $c, 'values' => array_slice($v, 0, 20)] + (in_array($f['auto'] ?? '', ['sale', 'deposit'], true) ? ['auto' => $f['auto']] : []);
             }
             $o['meta'] = $meta;
             // A row needs a time and some way to know who it belongs to: an account, or the email/phone on the row (guest checkout).
@@ -486,7 +528,7 @@ final class RecoverKitConnector
 
     // ------------------------------------------------------------------ commands
 
-    public function setup(bool $useAi): void
+    public function setup(bool $useAi, bool $auto = false): void
     {
         $this->say('RecoverKit Connector ' . self::VERSION . ' — setup');
         $this->connect();
@@ -503,7 +545,7 @@ final class RecoverKitConnector
             $this->say('Recognised ' . $woo[1] . '. Using the built-in WooCommerce mapping (no AI needed).');
             $mapping = self::checkMapping($woo[0], $tables);
         }
-        if (!$mapping && $useAi && $this->ask('Ask your AI model to suggest the mapping? It will see table names, column names and status values like "successful", never customer data.')) {
+        if (!$mapping && $useAi && ($auto || $this->ask('Ask your AI model to suggest the mapping? It will see table names, column names and status values like "successful", never customer data.'))) {
             $this->say('Asking...');
             $s = $this->suggestMapping($tables);
             if ($s) $mapping = self::checkMapping($s, $tables);
@@ -518,16 +560,53 @@ final class RecoverKitConnector
         $this->say(''); $this->say('Dry run (counted on your server, nothing sent):');
         $this->say(sprintf('  %d people · %d have bought (%d sales) · %d never bought', $d['people'], $d['buyers'], $d['sales'], max(0, $d['people'] - $d['buyers'])));
         if ($d['guests']) $this->say(sprintf('  + %d guest buyers who checked out without an account', $d['guests']));
-        foreach ($d['signals'] as $n => $c) $this->say(sprintf('  %d people with %s', $c, $n));
+        $label = ['deposit' => 'funded their wallet', 'checkout' => 'started a checkout without paying', 'login' => 'logged in'];
+        foreach ($mapping['signals'] as $s) if (isset($d['signals'][$s['name']])) $this->say(sprintf('  %d people %s', $d['signals'][$s['name']], $label[$s['kind']] ?? 'with ' . $s['name']));
         if (!$this->ask('Does that look right?')) $this->fail('not saved. Edit recoverkit-connector.json by hand, or run setup again.');
 
-        $share = $this->ask('Let RecoverKit keep encrypted email/phone/first name so it can send follow-ups for you? (No = only hashes leave this server, and you send messages yourself.)', false);
+        $share = $this->ask('Let RecoverKit keep encrypted email/phone/first name so it can send follow-ups for you? (No = only hashes leave this server, and you send messages yourself.)', $auto);
         $config = ['version' => 1, 'mapping' => $mapping, 'shareContact' => $share, 'historyDays' => (int)($this->env['RK_HISTORY_DAYS'] ?? 730), 'savedAt' => date('c')];
         file_put_contents($this->path('recoverkit-connector.json'), json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
         @chmod($this->path('recoverkit-connector.json'), 0640);
+        if ($auto) return;
         $this->say(''); $this->say('Saved recoverkit-connector.json. Next:');
         $this->say('  php ' . basename(__FILE__) . ' sync              (first run sends your history)');
         $this->say('  */15 * * * * php ' . __FILE__ . ' sync      (cron, every 15 minutes)');
+    }
+
+    // ------------------------------------------------------------------ one-command install
+
+    /** Exchange a one-time install code (from the RecoverKit dashboard) for this connector's own keys. */
+    public static function claim(string $endpoint, string $code): array
+    {
+        $ch = curl_init(rtrim($endpoint, '/') . '/v1/connector/claim');
+        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode(['code' => $code]), CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_SSL_VERIFYPEER => true]);
+        $body = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        $json = is_string($body) ? json_decode($body, true) : null;
+        if ($status !== 200 || !is_array($json) || empty($json['publicKey']) || empty($json['secretKey'])) {
+            throw new RuntimeException($json['error'] ?? ($err ?: "RecoverKit answered $status"));
+        }
+        return $json;
+    }
+
+    /** Add the 15-minute sync to this user's crontab (asks first). Returns false if it had to be added by hand. */
+    public function installCron(string $line): bool
+    {
+        $current = '';
+        if (function_exists('shell_exec')) $current = (string)@shell_exec('crontab -l 2>/dev/null');
+        if (strpos($current, 'recoverkit-connector.php sync --dir=' . $this->dir) !== false) { $this->say('✓ The cron job is already there.'); return true; }
+        if (!function_exists('proc_open') || !$this->ask('Add a cron job that syncs every 15 minutes?')) return false;
+        $p = @proc_open('crontab -', [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+        if (!is_resource($p)) return false;
+        fwrite($pipes[0], rtrim($current) . ($current !== '' ? PHP_EOL : '') . "# RecoverKit: sync new sign-ups and sales every 15 minutes" . PHP_EOL . $line . PHP_EOL);
+        fclose($pipes[0]); stream_get_contents($pipes[1]); stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);
+        $ok = proc_close($p) === 0;
+        if ($ok) $this->say('✓ Cron job added: new sign-ups and sales are synced every 15 minutes.');
+        return $ok;
     }
 
     private function loadConfig(): array
@@ -563,6 +642,15 @@ final class RecoverKitConnector
         $m = self::checkMapping($config['mapping'], $tables);
         // Safety: if the app's tables changed, stop rather than send something wrong.
         if ($m !== self::checkMapping($config['mapping'], null)) $this->fail('your database tables changed since setup (a table or column in the mapping is gone). Run setup again. Nothing was sent.');
+
+        // Type lists marked "auto" are re-read and re-sorted now, so new kinds of purchase are picked up.
+        foreach (['conversions', 'signals'] as $group) foreach ($m[$group] as &$src) foreach ($src['filters'] as &$f) {
+            if (empty($f['auto'])) continue;
+            $seen = array_map(fn($r) => (string)$r['v'], $this->select('SELECT DISTINCT ' . $this->q($f['column']) . ' AS v FROM ' . $this->q($src['table']) . ' LIMIT 200'));
+            $fresh = self::classifyTypes(array_values(array_filter($seen, fn($v) => $v !== '' && strlen($v) <= 64)))[$f['auto']];
+            if ($fresh) $f['values'] = array_slice(array_values(array_unique(array_merge($f['values'], $fresh))), 0, 20);
+        }
+        unset($src, $f);
 
         $stateFile = $this->path('.recoverkit-connector-state.json');
         $state = is_file($stateFile) ? (json_decode((string)file_get_contents($stateFile), true) ?: []) : [];
@@ -755,33 +843,79 @@ if (PHP_SAPI === 'cli' && (realpath($argv[0] ?? '') === __FILE__ || defined('REC
     $args = array_slice($argv, 1);
     $cmd = $args[0] ?? 'help';
     $env = getenv();
-    $dir = getcwd();
-    foreach ($args as $a) {
-        // --app=/path/to/your/app works for any framework; --laravel= is kept as an alias.
-        if (strpos($a, '--app=') === 0 || strpos($a, '--laravel=') === 0) {
-            $root = rtrim(substr($a, strpos($a, '=') + 1), '/');
-            $dotenv = RecoverKitDetect::readDotenv("$root/.env");
-            foreach (['RK_PUBLIC_KEY', 'RK_SECRET_KEY', 'RK_ENDPOINT', 'RK_DB_DSN', 'RK_DB_USER', 'RK_DB_PASS', 'RK_TIMEZONE', 'RK_HISTORY_DAYS'] as $k) {
-                if (!isset($env[$k]) && isset($dotenv[$k])) $env[$k] = $dotenv[$k];
-            }
-            if (!isset($env['RK_DB_DSN'])) {
-                $found = RecoverKitDetect::detect($root, $env);
-                if (isset($found['error'])) { fwrite(STDERR, 'Error: ' . $found['error'] . PHP_EOL); exit(1); }
-                $env['RK_DB_DSN'] = $found['dsn'];
-                // A dedicated read-only login (RK_DB_USER / RK_DB_PASS) always wins over the app's own login.
-                if (!isset($env['RK_DB_USER'])) $env['RK_DB_USER'] = (string)($found['user'] ?? '');
-                if (!isset($env['RK_DB_PASS'])) $env['RK_DB_PASS'] = (string)($found['pass'] ?? '');
-                fwrite(STDOUT, sprintf("Found your database in %s (%s): %s%s\n", $found['source'], $found['framework'], preg_replace('/password=[^;]*/i', 'password=***', $found['dsn']),
-                    isset($found['tablePrefix']) ? " · table prefix {$found['tablePrefix']}" : ''));
-            }
-            $dir = $root;
+    $opt = function (string $name) use ($args): ?string {
+        foreach ($args as $a) if (strpos($a, "--$name=") === 0) return substr($a, strlen($name) + 3);
+        return null;
+    };
+    $say = fn(string $s) => fwrite(STDOUT, $s . PHP_EOL);
+    $die = function (string $s) { fwrite(STDERR, 'Error: ' . $s . PHP_EOL); exit(1); };
+    $root = $opt('app') ?? $opt('laravel');
+    $root = $root !== null ? rtrim($root, '/') : null;
+    $dir = $opt('dir') ?? ($root ?? getcwd());
+
+    if ($cmd === 'install') {
+        // php recoverkit-connector.php install --code=XXXX-XXXX --endpoint=https://... [--app=.] [--dir=...]
+        $code = $opt('code') ?? ($args[1] ?? '');
+        $endpoint = $opt('endpoint') ?? ($env['RK_ENDPOINT'] ?? '');
+        if (!preg_match('/^[A-Za-z0-9-]{8,40}$/', $code)) $die('give the install code from your RecoverKit dashboard (Developers page), e.g. install --code=K7QM-2XPA-9RTD');
+        if (!preg_match('#^https?://#', $endpoint)) $die('--endpoint is missing');
+        $root = realpath($root ?? getcwd()) ?: getcwd();
+        $say('RecoverKit installer');
+        $say('Connecting to ' . $endpoint . '...');
+        try { $keys = RecoverKitConnector::claim($endpoint, $code); } catch (Throwable $e) { $die($e->getMessage()); }
+        $say('✓ Connected to ' . ($keys['projectName'] ?? 'your business') . '.');
+        if ($opt('dir') === null) {
+            $home = getenv('HOME') ?: dirname($root);
+            $dir = rtrim($home, '/') . '/recoverkit-connector-' . substr($keys['publicKey'], -6);
         }
-        if (strpos($a, '--dir=') === 0) $dir = substr($a, 6);
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true)) $die("could not create $dir");
+        // Never inside the app's web folder: keys and logs must not be downloadable.
+        if (strpos(realpath($dir) . '/', $root . '/') === 0) $die("$dir is inside your app folder; pass --dir= with a private folder outside it");
+        foreach (['RecoverKit.php', 'recoverkit-detect.php', 'recoverkit-connector.php'] as $f) {
+            if (realpath(__DIR__ . "/$f") !== realpath("$dir/$f")) copy(__DIR__ . "/$f", "$dir/$f");
+        }
+        $keyFile = "$dir/.recoverkit-keys.json";
+        file_put_contents($keyFile, json_encode(['RK_PUBLIC_KEY' => $keys['publicKey'], 'RK_SECRET_KEY' => $keys['secretKey'], 'RK_ENDPOINT' => $keys['endpoint'] ?? $endpoint, 'app' => $root], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+        @chmod($keyFile, 0600);
+        $say("✓ Keys saved privately in $keyFile (only this user can read it).");
+    }
+
+    // Keys saved by `install` (and the app folder it was run from), used by every later command.
+    $keyFile = rtrim($dir, '/') . '/.recoverkit-keys.json';
+    if (is_file($keyFile)) {
+        $saved = json_decode((string)file_get_contents($keyFile), true) ?: [];
+        foreach (['RK_PUBLIC_KEY', 'RK_SECRET_KEY', 'RK_ENDPOINT'] as $k) if (!isset($env[$k]) && !empty($saved[$k])) $env[$k] = $saved[$k];
+        if ($root === null && !empty($saved['app'])) $root = $saved['app'];
+    }
+    if ($root !== null) {
+        $dotenv = RecoverKitDetect::readDotenv("$root/.env");
+        foreach (['RK_PUBLIC_KEY', 'RK_SECRET_KEY', 'RK_ENDPOINT', 'RK_DB_DSN', 'RK_DB_USER', 'RK_DB_PASS', 'RK_TIMEZONE', 'RK_HISTORY_DAYS'] as $k) {
+            if (!isset($env[$k]) && isset($dotenv[$k])) $env[$k] = $dotenv[$k];
+        }
+        if (!isset($env['RK_DB_DSN'])) {
+            $found = RecoverKitDetect::detect($root, $env);
+            if (isset($found['error'])) $die($found['error']);
+            $env['RK_DB_DSN'] = $found['dsn'];
+            // A dedicated read-only login (RK_DB_USER / RK_DB_PASS) always wins over the app's own login.
+            if (!isset($env['RK_DB_USER'])) $env['RK_DB_USER'] = (string)($found['user'] ?? '');
+            if (!isset($env['RK_DB_PASS'])) $env['RK_DB_PASS'] = (string)($found['pass'] ?? '');
+            if ($cmd !== 'sync') $say(sprintf('Found your database in %s (%s): %s%s', $found['source'], $found['framework'], preg_replace('/password=[^;]*/i', 'password=***', $found['dsn']),
+                isset($found['tablePrefix']) ? " · table prefix {$found['tablePrefix']}" : ''));
+        }
     }
     $c = new RecoverKitConnector($env, $dir, in_array('--yes', $args, true));
-    if ($cmd === 'setup') $c->setup(!in_array('--no-ai', $args, true));
+    if ($cmd === 'install') {
+        $c->setup(true, true);
+        $say(''); $say('Sending your history (only hashes, dates and amounts)...');
+        $c->sync();
+        $line = '*/15 * * * * ' . PHP_BINARY . ' ' . $dir . '/recoverkit-connector.php sync --dir=' . $dir . ' >> ' . $dir . '/sync.out 2>&1';
+        if (in_array('--no-cron', $args, true) || !$c->installCron($line)) { $say(''); $say('Add this cron job (cPanel → Cron Jobs → Once Per Fifteen Minutes):'); $say('  ' . substr($line, strlen('*/15 * * * * '))); }
+        $say(''); $say('Done. Open your RecoverKit dashboard: your customers will appear under Leads.');
+        $say("Every query the connector runs is logged in $dir/recoverkit-connector.log");
+    }
+    elseif ($cmd === 'setup') $c->setup(!in_array('--no-ai', $args, true));
     elseif ($cmd === 'sync') $c->sync();
     elseif ($cmd === 'status') $c->status();
     elseif ($cmd === 'detect') { $r = RecoverKitDetect::detect(rtrim($args[1] ?? $dir, '/'), $env); unset($r['pass']); fwrite(STDOUT, json_encode($r, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL); }
-    else fwrite(STDOUT, "Usage: php recoverkit-connector.php setup|sync|status [--app=/path/to/your/app] [--yes] [--no-ai]\n       php recoverkit-connector.php detect /path/to/your/app\n");
+    else fwrite(STDOUT, "Usage: php recoverkit-connector.php install --code=XXXX --endpoint=https://... [--app=.]\n       php recoverkit-connector.php setup|sync|status [--app=/path/to/your/app] [--dir=...] [--yes] [--no-ai]\n       php recoverkit-connector.php detect /path/to/your/app\n");
 }

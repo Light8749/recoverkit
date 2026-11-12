@@ -24,7 +24,7 @@ const STAGE_LABEL = {
 };
 const FIELD_LABEL = { ref: 'Payment reference', amount: 'Amount', currency: 'Currency', email: 'Customer email', phone: 'Customer phone', name: 'Customer name', time: 'Paid at', eventId: 'Unique event ID', kind: 'Sale or deposit tag' };
 
-export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger, blog, scheduler, whatsapp }) {
+export function createDashboard({ db, config, keys, projects, engine, outreach, people, limiter, drafter, resolveAi, accounts, mailer, logger, blog, scheduler, whatsapp, install }) {
   const secureCookie = config.publicUrl.startsWith('https://');
   const cookie = (v, maxAge) => `rk_session=${v}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
 
@@ -540,9 +540,16 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
   const GUIDE_DAYS = 30;
   const guideLink = (projectId) => `${config.publicUrl}/dev/${signToken(keys.sign, { g: projectId }, GUIDE_DAYS * 86400)}`;
 
-  function developersPage(req, res, _p, url, secretKey = null) {
+  function developersPage(req, res, _p, url, secretKey = null, installCode = null) {
     const ctx = requireSession(req);
     const p = ctx.project;
+    const quick = installCode
+      ? `<section class="group quick-install"><h2 class="group-head">Connect your server in one command</h2><div class="group-body">
+          <div class="row code-row"><span class="code-label">Run this in a terminal, in your app's folder</span><pre>${esc(install.command(installCode))}</pre></div></div>
+          <p class="group-foot"><b>Copy it now: the code works once, for 60 minutes.</b> It downloads the read-only connector, connects it to ${esc(p.name)} (no keys to copy, no .env to edit), finds your database, shows what it found and asks before sending anything, then adds a 15-minute sync. Works with any PHP server with MySQL, PostgreSQL or SQLite (Laravel, WordPress, WooCommerce, CodeIgniter, plain PHP and more).</p></section>`
+      : `<form method="post" action="/dashboard/developers/install-code">${csrfField(ctx)}${group('Connect your server in one command', [
+          row('Bring in your customers and keep them in sync', '<button class="btn prominent small">Create install command</button>', { sub: 'For PHP apps with MySQL, PostgreSQL or SQLite. One command; nothing to configure.' }),
+        ])}</form>`;
     const share = group('Send this to your developer', [
       `<div class="row share-row"><input class="copy" readonly value="${esc(guideLink(p.id))}" aria-label="Guide link for your developer"></div>`,
     ], `A read-only copy of this page with your public key filled in, valid for ${GUIDE_DAYS} days. It doesn't contain a secret key or your data. Create a secret key below and send it separately, in a private message.`);
@@ -550,8 +557,15 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     sendHtml(res, 200, page({
       title: 'Developers', active: 'developers', ctx,
       subtitle: 'Everything your developer needs to connect your website, server and past customers. They don\'t need any RecoverKit code or access to this dashboard.',
-      body: `${banner(url.searchParams)}${share}${keyForm}<div class="guide">${developerGuide({ base: config.publicUrl, publicKey: p.public_key, secretKey, mode: p.gateway_mode })}</div>`,
+      body: `${banner(url.searchParams)}${quick}${share}${keyForm}<div class="guide">${developerGuide({ base: config.publicUrl, publicKey: p.public_key, secretKey, mode: p.gateway_mode })}</div>`,
     }));
+  }
+
+  async function installCodeAction(req, res, _p, url) {
+    const { ctx } = await postCtx(req);
+    if (!limiter.hit(`install-code:${ctx.project.id}`, 20, 60 * 60e3)) return back(res, '/dashboard/developers', null, 'Too many install commands. Try again in an hour.');
+    const code = install.createCode(ctx.project.id, ctx.user.email);
+    developersPage(req, res, null, url, null, code);
   }
 
   async function developerKeyAction(req, res, _p, url) {
@@ -625,6 +639,6 @@ export function createDashboard({ db, config, keys, projects, engine, outreach, 
     paymentsPage, newGatewayPage, createGatewayAction, gatewayPage, updateGatewayAction, deleteGatewayAction, modeAction,
     aiPage, aiSaveAction, aiResetAction, aiTestAction, channelsPage, channelsAction,
     settingsPage, settingsAction, automationAction, newKeyAction, revokeKeyAction, draftsAction, approveAction, rejectAction, replyAction, sendAction,
-    developersPage, developerKeyAction, sharedGuidePage, docsPage, ...acct, ...blogAdmin, isSignedIn: (req) => Boolean(session(req)),
+    developersPage, developerKeyAction, installCodeAction, sharedGuidePage, docsPage, ...acct, ...blogAdmin, isSignedIn: (req) => Boolean(session(req)),
   };
 }

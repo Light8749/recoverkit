@@ -109,6 +109,7 @@ You don't need this repository to connect an app. Everything comes from the Reco
 | Server address, public key, secret key | The business owner: dashboard → **Developers** (they can send you a guide link with everything filled in) |
 | Website script | `https://THEIR-RECOVERKIT-HOST/sdk/recoverkit.js` |
 | Node.js server SDK | `npm install recoverkit` |
+| Past customers, PHP apps (one command) | Developers page → **Create install command**, then run it in the app folder |
 | PHP server SDK and SQL connector | `https://THEIR-RECOVERKIT-HOST/sdk/recoverkit-php.zip`, or the single files under `/sdk/php/` |
 | MongoDB connector | `npx recoverkit-connector@1 setup --app=.` |
 | Any other language | The HTTP API: `https://THEIR-RECOVERKIT-HOST/docs` |

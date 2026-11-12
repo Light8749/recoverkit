@@ -49,6 +49,24 @@ In **Channels → WhatsApp replies**, enter the Meta app secret, then paste the 
 
 **Settings → Team:** invite colleagues by email (7-day link), resend invites, and remove people (not yourself, and never the server admin). **Delete this business** asks for the exact business name and your password, then deletes the business and everything linked to it: customers, messages, payments, keys and logins. The server admin's own business can't be deleted from the dashboard.
 
+## One-command install (PHP apps)
+
+On the **Developers** page, **Create install command** gives a command with a one-time code (it works once, for 60 minutes):
+
+```bash
+curl -fsSLo recoverkit-install.php https://YOUR-RECOVERKIT-HOST/install.php && php recoverkit-install.php K7QM-2XPA-9RTD
+```
+
+Run it in the app's folder. The installer:
+
+1. **Connects:** swaps the code (`POST /v1/connector/claim`) for the project's public key and a new secret key labelled `connector (installed)`. The keys go into `~/recoverkit-connector-xxxxxx/.recoverkit-keys.json` (mode 600), outside the app: no `.env` editing.
+2. **Finds the database** from the app's config (Laravel, WordPress, CodeIgniter, Django, Rails, any `.env` with `DB_*` or `DATABASE_URL`).
+3. **Maps it by itself:** WooCommerce is recognised exactly; otherwise the business's AI model suggests a mapping from names only, or built-in rules do. The rules read the values of type columns in ledger tables, so "Data Purchase" is a sale, "deposit" or "Virtual Account Funding" is a wallet deposit, and withdrawals, payouts, commissions, refunds and rewards are neither. Never-empty 0/1 flags like `banned` or `is_deleted` leave those accounts out. Type lists are re-checked at every sync, so new kinds of purchase count too.
+4. Shows a dry run, asks **Does that look right?**, sends the history, and adds a 15-minute cron job (it asks first; on servers without `crontab` it prints the line for cPanel).
+5. Deletes itself from the app folder.
+
+Later runs need nothing but `php ~/recoverkit-connector-xxxxxx/recoverkit-connector.php sync --dir=~/recoverkit-connector-xxxxxx`. To disconnect, revoke the `connector (installed)` key in Settings.
+
 ## Onboarding a business's developer
 
 The developer never needs this repository or the server code. In the dashboard, the business owner opens **Developers**, which shows every step with their own keys and server address filled in:

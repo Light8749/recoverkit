@@ -60,6 +60,7 @@ export function developerGuide({ base, publicKey, secretKey, mode = 'sales', lin
   ]);
 
   const history = `<section class="group"><h2 class="group-head">5. Past customers (read-only connector)</h2>
+    <p class="group-foot lead"><b>Quickest:</b> ${links ? 'click <b>Create install command</b> at the top of this page and run it in your app\'s folder.' : 'ask the business owner for an <b>install command</b> (Developers page → Create install command) and run it in your app\'s folder.'} It connects, finds your database and sets everything up by itself. The steps below are the manual way.</p>
     <p class="group-foot lead">The connector runs on your server, next to your database. It reads your tables where they are (nothing is exported), works out who signed up, bought and went quiet, and sends only hashes, dates and amounts. It looks at table and column names only, suggests a mapping, shows you a dry run, and asks before saving.</p>
     ${option('MySQL, MariaDB, PostgreSQL or SQLite', 'Any language or framework, on a server with PHP 7.4+ (most hosting has it)', `${group('', [
       code(`mkdir -p ~/recoverkit-php && cd ~/recoverkit-php\ncurl -fsSL -O ${dl('RecoverKit.php')} -O ${dl('recoverkit-connector.php')} -O ${dl('recoverkit-detect.php')}`, 'Download, outside public_html'),

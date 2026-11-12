@@ -216,6 +216,7 @@ details.danger p { margin: 0 0 12px; color: var(--label-2); font-size: 14px; }
 .row.code-row { flex-direction: column; align-items: stretch; gap: 6px; }
 .code-label { font-size: 12px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: .04em; }
 .code-row pre { background: var(--fill); border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre; word-break: normal; line-height: 1.5; max-width: 100%; }
+.quick-install pre { white-space: pre-wrap; word-break: break-all; font-size: 14px; }
 .row-sub { color: var(--label-2); font-size: 13px; margin-left: 10px; }
 details.option { margin: 0 0 8px; background: var(--bg-2); border-radius: var(--radius); }
 details.option > summary { color: var(--label); padding: 10px 16px; }
